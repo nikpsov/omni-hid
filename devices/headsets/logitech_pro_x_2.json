@@ -1,0 +1,14 @@
+{
+  "model_name": "Logitech PRO X 2",
+  "vendor_id": "0x046D",
+  "product_ids": [
+    "0x0AF7" // Wireless 2.4GHz dongle receiver mode
+  ],
+  "category": "Headset",
+  "protocol": "logitech-centurion",
+  "battery_life_hours": 50,
+  "capabilities": [
+    "BatteryLevel",
+    "ChargingStatus"
+  ]
+}

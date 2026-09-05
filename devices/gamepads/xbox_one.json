@@ -1,0 +1,17 @@
+{
+  "model_name": "Xbox One Controller",
+  "vendor_id": "0x045E",
+  "product_ids": [
+    "0x02EA",
+    "0x02D1",
+    "0x02E3",
+    "0x0291"
+  ],
+  "category": "Gamepad",
+  "protocol": "xbox-controller",
+  "battery_life_hours": 30,
+  "capabilities": [
+    "BatteryLevel",
+    "ChargingStatus"
+  ]
+}

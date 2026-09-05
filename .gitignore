@@ -1,0 +1,21 @@
+# Build outputs
+bin/
+obj/
+dist/
+installer/Output/
+
+# IDE, agent configs and cache files
+.vs/
+*.user
+*.suo
+*.pdb
+.agents/
+
+# Logs & temp files
+*.log
+debug.log
+*.tmp
+sha256sums.txt
+
+# Reference archives and dumps
+reference/

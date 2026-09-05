@@ -1,0 +1,17 @@
+{
+  "model_name": "Xbox Series Controller",
+  "vendor_id": "0x045E",
+  "product_ids": [
+    "0x0B12",
+    "0x0B13",
+    "0x0B00",
+    "0x0B05"
+  ],
+  "category": "Gamepad",
+  "protocol": "xbox-controller",
+  "battery_life_hours": 40,
+  "capabilities": [
+    "BatteryLevel",
+    "ChargingStatus"
+  ]
+}

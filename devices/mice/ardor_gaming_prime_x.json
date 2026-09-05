@@ -1,0 +1,20 @@
+{
+  "model_name": "ARDOR GAMING Prime X",
+  "vendor_id": "0x25A7",
+  "product_ids": [
+    "0xFA7B", // Wired USB cable mode
+    "0xFA7C"  // Wireless 2.4GHz dongle receiver mode
+  ],
+  "wired_product_ids": [
+    "0xFA7B"
+  ],
+  "category": "Mouse",
+  "protocol": "areson",
+  "target_usage_page": "0xFF02",
+  "target_usage": "0x0002",
+  "battery_life_hours": 60,
+  "capabilities": [
+    "BatteryLevel",
+    "ChargingStatus"
+  ]
+}

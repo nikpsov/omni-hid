@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build and Verify
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build OmniHID Solution
+        run: |
+          msbuild OmniHid.sln /p:Configuration=Release /p:Platform="Any CPU" /m
+
+      - name: Verify CLI Output
+        shell: pwsh
+        run: |
+          Test-Path bin\omni-hid.exe
+          Test-Path bin\OmniHid.Core.dll
+          bin\omni-hid.exe --help

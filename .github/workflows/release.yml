@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.0.1)'
+        required: false
+        default: '0.0.1'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ github.event.inputs.version }}" -ne "") {
+            $ver = "${{ github.event.inputs.version }}".TrimStart("v")
+          } elseif ($env:GITHUB_REF -like "refs/tags/v*") {
+            $ver = $env:GITHUB_REF.Substring(11) # Strip 'refs/tags/v'
+          } else {
+            $ver = "0.0.1"
+          }
+          Write-Host "Releasing version: $ver"
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TAG_NAME=v$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build OmniHID (Release)
+        run: |
+          msbuild OmniHid.sln /p:Configuration=Release /p:Platform="Any CPU" /m
+
+      - name: Prepare Staging Folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item -Path bin\OmniHid.Core.dll -Destination dist\
+          Copy-Item -Path bin\omni-hid.exe -Destination dist\
+          Copy-Item -Path devices -Destination dist\devices -Recurse
+          Copy-Item -Path README.md -Destination dist\
+          Copy-Item -Path README.ru.md -Destination dist\
+          Copy-Item -Path LICENSE -Destination dist\
+
+      - name: Create Portable Zip Package
+        shell: pwsh
+        run: |
+          $zipName = "omni-hid-v$($env:VERSION)-portable.zip"
+          Compress-Archive -Path dist\* -DestinationPath $zipName -Force
+          Write-Host "Created portable archive: $zipName"
+
+      - name: Setup Inno Setup Compiler
+        shell: pwsh
+        run: |
+          $isccDir = "C:\Program Files (x86)\Inno Setup 6"
+          if (-not (Test-Path "$isccDir\ISCC.exe")) {
+            Write-Host "Installing Inno Setup via Chocolatey..."
+            choco install innosetup --no-progress
+          }
+          echo "$isccDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Compile Inno Setup Installer
+        shell: pwsh
+        run: |
+          iscc installer\omni-hid-setup.iss "/DMyAppVersion=$($env:VERSION)"
+          Move-Item "installer\Output\omni-hid-v$($env:VERSION)-setup.exe" ".\omni-hid-v$($env:VERSION)-setup.exe" -Force
+          Write-Host "Created installer: omni-hid-v$($env:VERSION)-setup.exe"
+
+      - name: Generate Checksums
+        shell: pwsh
+        run: |
+          $setupFile = "omni-hid-v$($env:VERSION)-setup.exe"
+          $zipFile = "omni-hid-v$($env:VERSION)-portable.zip"
+          
+          $hashSetup = (Get-FileHash -Algorithm SHA256 -Path $setupFile).Hash.ToLower()
+          $hashZip = (Get-FileHash -Algorithm SHA256 -Path $zipFile).Hash.ToLower()
+          
+          $lines = @(
+            "$hashSetup  $setupFile",
+            "$hashZip  $zipFile"
+          )
+          $lines | Out-File -FilePath "sha256sums.txt" -Encoding ascii
+          
+          Write-Host "SHA-256 Checksums:"
+          Get-Content "sha256sums.txt"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.TAG_NAME }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            omni-hid-v${{ env.VERSION }}-setup.exe
+            omni-hid-v${{ env.VERSION }}-portable.zip
+            sha256sums.txt
