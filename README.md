@@ -24,6 +24,8 @@ Modern gaming peripherals (mice, keyboards, headsets, and gamepads) offer high-p
 - **For End-Users & Gamers:** A standalone diagnostic CLI with an interactive dashboard, live battery scanning, real-time packet sniffing with diff highlighting, and automated A-B calibration.
 - **For Developers & Integrators:** A modular, zero-dependency C# library (`OmniHid.Core.dll`) featuring an event-driven lifecycle, lock-free thread-safe snapshots, hot-reloadable declarative JSON profiles, and an extensible hardware driver architecture.
 
+> **Featured Application**: Check out [**OmniHID Taskbar Battery Indicator**](https://github.com/nikpsov/omni-hid-taskbar-battery-indicator) — a lightweight Windows taskbar battery monitor built on top of this engine.
+
 ---
 
 ## Why OmniHID?
@@ -243,6 +245,12 @@ Explore detailed documentation in the [`docs/`](docs/) directory:
 - 📄 [**Device Profiles & Hot Reload**](docs/device-profiles.md) — JSON profile schema, hot reload directories, and dual-mode configuration.
 - 🔬 [**Protocol Development**](docs/protocol-development.md) — Reverse-engineering wire formats and implementing `IProtocolHandler`.
 - 🏛️ [**Architecture & Internals**](docs/architecture.md) — Win32 P/Invoke subsystem, multi-interface aggregation, and zero-allocation snapshot design.
+
+---
+
+## Ecosystem & Projects Built with OmniHID
+
+- 🔋 [**OmniHID Taskbar Battery Indicator**](https://github.com/nikpsov/omni-hid-taskbar-battery-indicator) — Lightweight Windows taskbar and system tray battery monitor for wireless gaming peripherals, powered by the `OmniHid.Core` telemetry engine.
 
 ---
 
