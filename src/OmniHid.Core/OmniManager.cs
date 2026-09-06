@@ -81,6 +81,9 @@ namespace OmniHid.Core
         private Timer _debounceTimer;
         private Win32DeviceWatcher _watcher;
         private bool _isPolling;
+        private volatile bool _needsFullScan = true;
+        private List<HidDeviceInfo> _cachedHidList;
+        private int _pollCountSinceFullScan;
 
         /// <summary>
         /// Temporary grouping container used during bus reconciliation to aggregate multiple HID interfaces.
@@ -174,6 +177,7 @@ namespace OmniHid.Core
         /// <param name="pollIntervalMs">Interval between telemetry refresh passes in milliseconds.</param>
         public void StartMonitoring(int pollIntervalMs = 15000)
         {
+            _needsFullScan = true;
             ForceRefresh();
             _pollTimer.Change(pollIntervalMs, pollIntervalMs);
         }
@@ -187,11 +191,24 @@ namespace OmniHid.Core
         }
 
         /// <summary>
+        /// Updates the periodic background telemetry polling frequency without triggering an immediate bus scan.
+        /// </summary>
+        /// <param name="pollIntervalMs">New interval between refresh passes in milliseconds.</param>
+        public void SetPollInterval(int pollIntervalMs)
+        {
+            if (pollIntervalMs > 0 && _pollTimer != null)
+            {
+                _pollTimer.Change(pollIntervalMs, pollIntervalMs);
+            }
+        }
+
+        /// <summary>
         /// Reloads device profiles from embedded resources and external filesystem locations,
         /// and triggers an immediate asynchronous bus scan and telemetry refresh.
         /// </summary>
         public void ForceRefresh()
         {
+            _needsFullScan = true;
             _registry.Reload();
             ThreadPool.QueueUserWorkItem(state => ScanAndUpdate());
         }
@@ -202,6 +219,7 @@ namespace OmniHid.Core
         /// <returns>List of discovered <see cref="IOmniDevice"/> instances.</returns>
         public List<IOmniDevice> ScanDevices()
         {
+            _needsFullScan = true;
             ScanAndUpdate();
             return new List<IOmniDevice>(_connectedDevicesSnapshot);
         }
@@ -212,6 +230,7 @@ namespace OmniHid.Core
 
         private void OnProfilesReloaded()
         {
+            _needsFullScan = true;
             ThreadPool.QueueUserWorkItem(state => ScanAndUpdate());
         }
 
@@ -227,6 +246,7 @@ namespace OmniHid.Core
 
         private void OnUsbDeviceChanged()
         {
+            _needsFullScan = true;
             // Debounce rapid plug/unplug events with a 200ms timer delay without blocking a ThreadPool thread
             if (_debounceTimer != null)
             {
@@ -256,7 +276,21 @@ namespace OmniHid.Core
 
             try
             {
-                List<HidDeviceInfo> allHid = _transport.Enumerate();
+                List<HidDeviceInfo> allHid;
+                lock (_lock)
+                {
+                    if (_needsFullScan || _cachedHidList == null || ++_pollCountSinceFullScan >= 8)
+                    {
+                        allHid = _transport.Enumerate();
+                        _cachedHidList = allHid;
+                        _needsFullScan = false;
+                        _pollCountSinceFullScan = 0;
+                    }
+                    else
+                    {
+                        allHid = _cachedHidList;
+                    }
+                }
 
                 // ── Phase 1: Group raw HID interfaces by physical device instance ──────
                 Dictionary<string, List<HidDeviceInfo>> byPhysicalDevice = new Dictionary<string, List<HidDeviceInfo>>(StringComparer.OrdinalIgnoreCase);

@@ -153,17 +153,8 @@ namespace OmniHid.Core.Transport.Win32
                 {
                     info.ProductString = ExtractNullTerminatedString(_tlStrBuf);
                 }
-                Array.Clear(_tlStrBuf, 0, _tlStrBuf.Length);
-                if (Win32HidNative.HidD_GetManufacturerString(handle, _tlStrBuf, (uint)_tlStrBuf.Length))
-                {
-                    info.ManufacturerString = ExtractNullTerminatedString(_tlStrBuf);
-                }
-                Array.Clear(_tlStrBuf, 0, _tlStrBuf.Length);
-                if (Win32HidNative.HidD_GetSerialNumberString(handle, _tlStrBuf, (uint)_tlStrBuf.Length))
-                {
-                    info.SerialNumber = ExtractNullTerminatedString(_tlStrBuf);
-                }
-
+                // Product string is retained for profile model disambiguation when needed.
+                // Manufacturer and SerialNumber descriptor calls are omitted to avoid unnecessary USB control transfers.
                 results.Add(info);
             }
         }
