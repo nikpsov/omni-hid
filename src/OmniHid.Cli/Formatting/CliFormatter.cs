@@ -52,7 +52,7 @@ namespace OmniHid.Cli.Formatting
             Console.WriteLine("  [5] sniff     [filter]   Live raw HID packet sniffer with real-time diff highlighting & dump file");
             Console.WriteLine("  [6] monitor              Real-time event monitor (watches USB arrivals/removals live)");
             Console.WriteLine("  [7] calibrate [filter]   Guided A-B calibration (diff state on battery vs charging cable)");
-            Console.WriteLine("  [8] export    [filter]   Export AI-ready protocol spec (.md) with LLM prompt & dumps");
+            Console.WriteLine("  [8] export    [filter]   Export device diagnostics (.md for GitHub Issue / AI spec & profile)");
             Console.WriteLine("  [9] registered [filter]  Scan only verified peripherals with declarative (.json) profiles");
             Console.WriteLine("  [0] help                 Show this help information");
             Console.ResetColor();
@@ -75,7 +75,7 @@ namespace OmniHid.Cli.Formatting
             Console.WriteLine("  omni-hid                          (Launch interactive numbered menu)");
             Console.WriteLine("  omni-hid 1                        (Quick scan via number)");
             Console.WriteLine("  omni-hid 7 ardor                  (A-B calibrate battery & charging flag on Ardor mouse)");
-            Console.WriteLine("  omni-hid 8 akko                   (Export AI-ready protocol spec markdown for Akko)");
+            Console.WriteLine("  omni-hid 8 vgn                    (Export diagnostics and GitHub Issue report for VGN mouse)");
             Console.WriteLine("  omni-hid 4 25a7                   (Hunt battery telemetry on Ardor/Areson 0x25A7)");
             Console.WriteLine("  omni-hid sniff mouse              (Sniff live HID packets from mouse endpoints)");
             Console.WriteLine("  omni-hid sniff --timeout 60       (Sniff all devices for 60 seconds max)");

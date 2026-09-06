@@ -150,7 +150,10 @@ namespace OmniHid.Cli
                 case "8":
                 case "export":
                 case "spec":
+                case "issue":
+                case "report":
                 case "--export-spec":
+                case "--issue":
                     ExportCommand.Execute(filter);
                     break;
                 case "--help":
@@ -195,7 +198,7 @@ namespace OmniHid.Cli
                 Console.WriteLine("    [5] 📡 Live Input Report Sniffer & Real-Time Diff Monitor");
                 Console.WriteLine("    [6] 🔄 Real-Time USB Arrival / Removal Event Monitor");
                 Console.WriteLine("    [7] 🎯 A-B Battery & Charger Calibration (Guided Plug/Unplug Diff Engine)");
-                Console.WriteLine("    [8] 🤖 Export AI-Ready Protocol Specification (.md)");
+                Console.WriteLine("    [8] 📋 Export Device Diagnostics (.md for GitHub Issue / AI)");
                 Console.WriteLine("    [9] 📄 Scan Registered Devices Only (Verified .json Profiles)");
                 Console.WriteLine("    [0] 🚪 Exit");
                 Console.WriteLine();
@@ -273,6 +276,8 @@ namespace OmniHid.Cli
                     case "8":
                     case "export":
                     case "spec":
+                    case "issue":
+                    case "report":
                         ExportCommand.Execute(null);
                         CliFormatter.SafeWaitForKey();
                         break;
