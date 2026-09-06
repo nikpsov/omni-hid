@@ -124,7 +124,7 @@ namespace OmniHid.Cli.Commands
                     Console.WriteLine();
                     Console.WriteLine(" Next Steps:");
                     Console.WriteLine(" 1. To report or request support for this peripheral on GitHub:");
-                    Console.WriteLine("    https://github.com/nikpsov/omni-hid/issues/new?template=new_device.md");
+                    Console.WriteLine("    https://github.com/nikpsov/omni-hid/issues/new?template=new_device.yml");
                     Console.WriteLine("    (Copy and paste Section 1 from the generated file into the issue description)");
                     Console.WriteLine();
                     Console.WriteLine(" 2. To develop or verify a driver using AI (Gemini, Claude, ChatGPT):");

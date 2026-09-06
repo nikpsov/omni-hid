@@ -134,7 +134,7 @@ namespace OmniHid.Core.Diagnostics
                 sw.WriteLine("---");
                 sw.WriteLine("## 1. GitHub Issue Quick-Copy Section");
                 sw.WriteLine("*Copy and paste the checklist and device block below directly into your GitHub Issue at:*");
-                sw.WriteLine("*https://github.com/nikpsov/omni-hid/issues/new?template=new_device.md*");
+                sw.WriteLine("*https://github.com/nikpsov/omni-hid/issues/new?template=new_device.yml*");
                 sw.WriteLine();
                 sw.WriteLine("```markdown");
                 sw.WriteLine("### Device Information");

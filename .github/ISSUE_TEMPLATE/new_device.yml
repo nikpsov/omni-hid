@@ -1,0 +1,97 @@
+name: New Device Support / Verification
+description: Submit diagnostic dumps, verify support, or request reverse engineering for a new peripheral
+title: "[Device]: <Manufacturer> <Model Name>"
+labels: ["device-support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Thanks for contributing to OmniHID!
+        Please fill out the structured form below. 
+        If you ran `omni-hid export` (or menu option `[8]`), you can paste the generated specification file into the **Diagnostic Specification** field.
+
+  - type: input
+    id: manufacturer
+    attributes:
+      label: Manufacturer / Brand
+      description: Name of the peripheral vendor or manufacturer
+      placeholder: "e.g., Razer, Logitech, VGN, ATK, Darmoshark, Ardor Gaming, Akko"
+    validations:
+      required: true
+
+  - type: input
+    id: model_name
+    attributes:
+      label: Device Model Name
+      description: Specific model or product edition
+      placeholder: "e.g., Dragonfly F1 Pro, Viper V2 Pro, M3 4K, G915 LIGHTSPEED, DualSense"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Device Category
+      description: Functional category of the hardware peripheral
+      options:
+        - Mouse
+        - Keyboard
+        - Headset
+        - Gamepad
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: connection_modes
+    attributes:
+      label: Connection Mode(s) Tested
+      description: Select all connection interfaces you tested with this peripheral
+      options:
+        - label: 2.4GHz Wireless USB Dongle / Receiver
+        - label: Bluetooth (BLE / Classic)
+        - label: Direct USB Wired Cable
+
+  - type: input
+    id: vid_pid
+    attributes:
+      label: USB Vendor ID (VID) & Product ID (PID)
+      description: Hexadecimal hardware identifiers (visible in `omni-hid scan`, `omni-hid list`, or Device Manager)
+      placeholder: "e.g., VID: 0x25A7, PID: 0xFA08 (include wired PID if dual-mode)"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: support_status
+    attributes:
+      label: Support & Telemetry Status
+      description: Select all options that currently apply when running OmniHID
+      options:
+        - label: "Supported: Battery percentage / level is accurately detected (e.g. 85%)"
+        - label: "Charging State Detected: Battery state properly reflects Charging vs Discharging"
+        - label: "Protocol Identified: Device communicates over an existing protocol (e.g. compx, areson, razer, logitech-hidpp, sinowealth, steelseries, corsair-headset, dualsense, xbox)"
+        - label: "Declarative Profile Ready: Candidate JSON profile exists or is provided below"
+        - label: "Unsupported / Work-in-Progress: Device is visible in Windows HID, but battery reading is unavailable, 0%, or requires a new protocol driver"
+
+  - type: textarea
+    id: diagnostic_report
+    attributes:
+      label: OmniHID Diagnostic Specification (.md)
+      description: |
+        Run `omni-hid export` (or menu option `[8]`) in the CLI, select your device, and paste the generated `device_spec_VID_PID.md` contents below.
+      render: markdown
+      placeholder: "Paste the contents of device_spec_VID_PID.md here..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: oem_context
+    attributes:
+      label: OEM Software & Hardware Context
+      description: Additional context about manufacturer software, physical battery indicators, sleep modes, etc.
+      placeholder: |
+        - Official Software: e.g., Razer Synapse 3, VGN HUB v1.0.8, ATK V HUB, G HUB
+        - Battery Reading in OEM App: e.g., 85% in official app vs what OmniHID reports
+        - Hardware Notes: e.g., LED battery indicator turns amber when charging, device sleeps after 5 minutes
+    validations:
+      required: false
