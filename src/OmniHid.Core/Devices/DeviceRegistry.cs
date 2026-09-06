@@ -11,7 +11,7 @@ namespace OmniHid.Core.Devices
     /// Central catalog of known peripheral hardware profiles, fallback heuristics, and external JSON definitions.
     /// Maps USB Vendor ID (VID) and Product ID (PID) to matching <see cref="DeviceProfile"/> definitions.
     /// </summary>
-    public class DeviceRegistry
+    public class DeviceRegistry : IDisposable
     {
         private readonly List<DeviceProfile> _profiles = new List<DeviceProfile>();
         private readonly Dictionary<uint, DeviceProfile> _exactMap = new Dictionary<uint, DeviceProfile>();
@@ -97,13 +97,27 @@ namespace OmniHid.Core.Devices
         /// </summary>
         public DeviceProfile FindProfile(ushort vid, ushort pid, string productString = null)
         {
-            return FindProfile(vid, pid, productString, DeviceCategory.Unknown);
+            return FindProfile(vid, pid, productString, DeviceCategory.Unknown, true);
         }
 
         /// <summary>
         /// Resolves a matching <see cref="DeviceProfile"/> for the given VID/PID with an optional category hint.
         /// </summary>
         public DeviceProfile FindProfile(ushort vid, ushort pid, string productString, DeviceCategory categoryHint)
+        {
+            return FindProfile(vid, pid, productString, categoryHint, true);
+        }
+
+        /// <summary>
+        /// Resolves a matching <see cref="DeviceProfile"/> for the given VID/PID with category hint and dynamic fallback control.
+        /// </summary>
+        /// <param name="vid">16-bit USB Vendor ID.</param>
+        /// <param name="pid">16-bit USB Product ID.</param>
+        /// <param name="productString">Optional USB product name descriptor.</param>
+        /// <param name="categoryHint">Peripheral category hint.</param>
+        /// <param name="allowFallback">If true, synthesizes dynamic vendor fallbacks when no exact or wildcard profile is registered.</param>
+        /// <returns>A matching <see cref="DeviceProfile"/>, or null if not resolved.</returns>
+        public DeviceProfile FindProfile(ushort vid, ushort pid, string productString, DeviceCategory categoryHint, bool allowFallback)
         {
             // 1. O(1) exact match against registered profiles
             uint key = ((uint)vid << 16) | pid;
@@ -125,8 +139,24 @@ namespace OmniHid.Core.Devices
                 }
             }
 
+            if (!allowFallback)
+            {
+                return null;
+            }
+
             // 3. Dynamic Vendor Fallbacks for Unregistered Product IDs
             return ResolveVendorFallback(vid, pid, productString, categoryHint);
+        }
+
+        /// <summary>
+        /// Finds an explicitly registered (.json) profile matching the specified VID/PID without vendor or generic fallbacks.
+        /// </summary>
+        /// <param name="vid">16-bit USB Vendor ID.</param>
+        /// <param name="pid">16-bit USB Product ID.</param>
+        /// <returns>A validated <see cref="DeviceProfile"/> from JSON definitions, or null if unregistered.</returns>
+        public DeviceProfile FindRegisteredProfile(ushort vid, ushort pid)
+        {
+            return FindProfile(vid, pid, null, DeviceCategory.Unknown, false);
         }
 
         /// <summary>
@@ -208,12 +238,29 @@ namespace OmniHid.Core.Devices
                     (productString.IndexOf("PRO X 2", StringComparison.OrdinalIgnoreCase) >= 0 ||
                      productString.IndexOf("Centurion", StringComparison.OrdinalIgnoreCase) >= 0);
 
+                bool isKeyboard = categoryHint == DeviceCategory.Keyboard ||
+                    (!string.IsNullOrEmpty(productString) &&
+                     (productString.IndexOf("Keyboard", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("G915", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("G815", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("G613", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("MX Keys", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Craft", StringComparison.OrdinalIgnoreCase) >= 0));
+
+                DeviceCategory cat = isHeadset ? DeviceCategory.Headset :
+                                     isKeyboard ? DeviceCategory.Keyboard :
+                                     (categoryHint != DeviceCategory.Unknown ? categoryHint : DeviceCategory.Mouse);
+
+                string defaultName = isHeadset ? "Logitech Wireless Headset" :
+                                     isKeyboard ? "Logitech Wireless Keyboard" :
+                                     "Logitech Wireless Mouse";
+
                 return new DeviceProfile
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? (isHeadset ? "Logitech Wireless Headset" : "Logitech Wireless Mouse") : productString,
+                    ModelName = string.IsNullOrEmpty(productString) ? defaultName : productString,
                     VendorId = vid,
                     ProductIds = new ushort[] { pid },
-                    Category = isHeadset ? DeviceCategory.Headset : DeviceCategory.Mouse,
+                    Category = cat,
                     ProtocolId = isCenturion ? "logitech-centurion" : "logitech-hidpp"
                 };
             }
@@ -221,62 +268,85 @@ namespace OmniHid.Core.Devices
             // ── Sony PlayStation (0x054C) ─────────────────────────────────────
             if (vid == 0x054C)
             {
-                return new DeviceProfile
+                bool isGamepad = categoryHint == DeviceCategory.Gamepad ||
+                    IsSonyGamepadPid(pid) ||
+                    (!string.IsNullOrEmpty(productString) &&
+                     (productString.IndexOf("Controller", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("DualSense", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("DualShock", StringComparison.OrdinalIgnoreCase) >= 0));
+
+                if (isGamepad)
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? "Sony PlayStation Controller" : productString,
-                    VendorId = vid,
-                    ProductIds = new ushort[] { pid },
-                    Category = DeviceCategory.Gamepad,
-                    ProtocolId = "sony-dualsense",
-                    BatteryLifeHours = 12
-                };
+                    return new DeviceProfile
+                    {
+                        ModelName = string.IsNullOrEmpty(productString) ? "Sony PlayStation Controller" : productString,
+                        VendorId = vid,
+                        ProductIds = new ushort[] { pid },
+                        Category = DeviceCategory.Gamepad,
+                        ProtocolId = "sony-dualsense",
+                        BatteryLifeHours = 12
+                    };
+                }
+
+                return null;
             }
 
             // ── Microsoft Xbox (0x045E) ───────────────────────────────────────
             if (vid == 0x045E)
             {
-                string modelName = "Xbox Wireless Controller";
-                double batteryLife = 40;
+                bool isGamepad = categoryHint == DeviceCategory.Gamepad ||
+                    IsXboxGamepadPid(pid) ||
+                    (!string.IsNullOrEmpty(productString) &&
+                     (productString.IndexOf("Xbox", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Controller", StringComparison.OrdinalIgnoreCase) >= 0));
 
-                if (pid == 0x02EA || pid == 0x02D1 || pid == 0x0291)
+                if (isGamepad)
                 {
-                    modelName = "Xbox One Wireless Controller";
-                    batteryLife = 30;
-                }
-                else if (pid == 0x02E3)
-                {
-                    modelName = "Xbox One Elite Controller";
-                    batteryLife = 30;
-                }
-                else if (pid == 0x0B00 || pid == 0x0B05)
-                {
-                    modelName = "Xbox Elite Wireless Controller Series 2";
-                    batteryLife = 40;
-                }
-                else if (pid == 0x0B12 || pid == 0x0B13)
-                {
-                    modelName = "Xbox Wireless Controller";
-                    batteryLife = 40;
-                }
-                else if (pid == 0x028E || pid == 0x028F)
-                {
-                    modelName = "Xbox 360 Controller";
-                    batteryLife = 30;
-                }
-                else if (!string.IsNullOrEmpty(productString))
-                {
-                    modelName = productString;
+                    string modelName = "Xbox Wireless Controller";
+                    double batteryLife = 40;
+
+                    if (pid == 0x02EA || pid == 0x02D1 || pid == 0x0291)
+                    {
+                        modelName = "Xbox One Wireless Controller";
+                        batteryLife = 30;
+                    }
+                    else if (pid == 0x02E3)
+                    {
+                        modelName = "Xbox One Elite Controller";
+                        batteryLife = 30;
+                    }
+                    else if (pid == 0x0B00 || pid == 0x0B05)
+                    {
+                        modelName = "Xbox Elite Wireless Controller Series 2";
+                        batteryLife = 40;
+                    }
+                    else if (pid == 0x0B12 || pid == 0x0B13)
+                    {
+                        modelName = "Xbox Wireless Controller";
+                        batteryLife = 40;
+                    }
+                    else if (pid == 0x028E || pid == 0x028F)
+                    {
+                        modelName = "Xbox 360 Controller";
+                        batteryLife = 30;
+                    }
+                    else if (!string.IsNullOrEmpty(productString))
+                    {
+                        modelName = productString;
+                    }
+
+                    return new DeviceProfile
+                    {
+                        ModelName = modelName,
+                        VendorId = vid,
+                        ProductIds = new ushort[] { pid },
+                        Category = DeviceCategory.Gamepad,
+                        ProtocolId = "xbox-controller",
+                        BatteryLifeHours = batteryLife
+                    };
                 }
 
-                return new DeviceProfile
-                {
-                    ModelName = modelName,
-                    VendorId = vid,
-                    ProductIds = new ushort[] { pid },
-                    Category = DeviceCategory.Gamepad,
-                    ProtocolId = "xbox-controller",
-                    BatteryLifeHours = batteryLife
-                };
+                return null;
             }
 
             // ── SteelSeries (0x1038) ──────────────────────────────────────────
@@ -288,12 +358,25 @@ namespace OmniHid.Core.Devices
                       productString.IndexOf("Nova", StringComparison.OrdinalIgnoreCase) >= 0 ||
                       productString.IndexOf("Headset", StringComparison.OrdinalIgnoreCase) >= 0));
 
+                bool isKeyboard = categoryHint == DeviceCategory.Keyboard ||
+                    (!string.IsNullOrEmpty(productString) &&
+                     (productString.IndexOf("Apex", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Keyboard", StringComparison.OrdinalIgnoreCase) >= 0));
+
+                DeviceCategory cat = isHeadset ? DeviceCategory.Headset :
+                                     isKeyboard ? DeviceCategory.Keyboard :
+                                     (categoryHint != DeviceCategory.Unknown ? categoryHint : DeviceCategory.Mouse);
+
+                string defaultName = isHeadset ? "SteelSeries Wireless Headset" :
+                                     isKeyboard ? "SteelSeries Wireless Keyboard" :
+                                     "SteelSeries Wireless Mouse";
+
                 return new DeviceProfile
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? "SteelSeries Wireless Device" : productString,
+                    ModelName = string.IsNullOrEmpty(productString) ? defaultName : productString,
                     VendorId = vid,
                     ProductIds = new ushort[] { pid },
-                    Category = isHeadset ? DeviceCategory.Headset : DeviceCategory.Mouse,
+                    Category = cat,
                     ProtocolId = "steelseries"
                 };
             }
@@ -301,38 +384,66 @@ namespace OmniHid.Core.Devices
             // ── Corsair (0x1B1C) ──────────────────────────────────────────────
             if (vid == 0x1B1C)
             {
-                return new DeviceProfile
+                bool isHeadset = categoryHint == DeviceCategory.Headset ||
+                    (!string.IsNullOrEmpty(productString) &&
+                     (productString.IndexOf("Headset", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Void", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Virtuoso", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("HS70", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("HS80", StringComparison.OrdinalIgnoreCase) >= 0));
+
+                if (isHeadset)
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? "Corsair Wireless Headset" : productString,
-                    VendorId = vid,
-                    ProductIds = new ushort[] { pid },
-                    Category = DeviceCategory.Headset,
-                    ProtocolId = "corsair-headset"
-                };
+                    return new DeviceProfile
+                    {
+                        ModelName = string.IsNullOrEmpty(productString) ? "Corsair Wireless Headset" : productString,
+                        VendorId = vid,
+                        ProductIds = new ushort[] { pid },
+                        Category = DeviceCategory.Headset,
+                        ProtocolId = "corsair-headset"
+                    };
+                }
+
+                return null;
             }
 
             // ── HyperX / HP (0x03F0) ──────────────────────────────────────────
             if (vid == 0x03F0)
             {
-                return new DeviceProfile
+                bool isHeadset = categoryHint == DeviceCategory.Headset ||
+                    (!string.IsNullOrEmpty(productString) &&
+                     (productString.IndexOf("Headset", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Cloud", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Flight", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      productString.IndexOf("Stinger", StringComparison.OrdinalIgnoreCase) >= 0));
+
+                if (isHeadset)
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? "HyperX Wireless Headset" : productString,
-                    VendorId = vid,
-                    ProductIds = new ushort[] { pid },
-                    Category = DeviceCategory.Headset,
-                    ProtocolId = "hyperx-headset"
-                };
+                    return new DeviceProfile
+                    {
+                        ModelName = string.IsNullOrEmpty(productString) ? "HyperX Wireless Headset" : productString,
+                        VendorId = vid,
+                        ProductIds = new ushort[] { pid },
+                        Category = DeviceCategory.Headset,
+                        ProtocolId = "hyperx-headset"
+                    };
+                }
+
+                return null;
             }
 
             // ── SinoWealth (0x258A) ───────────────────────────────────────────
             if (vid == 0x258A)
             {
+                bool isKeyboard = categoryHint == DeviceCategory.Keyboard ||
+                    (!string.IsNullOrEmpty(productString) && productString.IndexOf("Keyboard", StringComparison.OrdinalIgnoreCase) >= 0);
+
                 return new DeviceProfile
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? "SinoWealth Wireless Mouse" : productString,
+                    ModelName = string.IsNullOrEmpty(productString) ? (isKeyboard ? "SinoWealth Wireless Keyboard" : "SinoWealth Wireless Mouse") : productString,
                     VendorId = vid,
                     ProductIds = new ushort[] { pid },
-                    Category = DeviceCategory.Mouse,
+                    Category = isKeyboard ? DeviceCategory.Keyboard : DeviceCategory.Mouse,
                     ProtocolId = "sinowealth"
                 };
             }
@@ -340,12 +451,15 @@ namespace OmniHid.Core.Devices
             // ── CompX (0x24AE) ────────────────────────────────────────────────
             if (vid == 0x24AE)
             {
+                bool isKeyboard = categoryHint == DeviceCategory.Keyboard ||
+                    (!string.IsNullOrEmpty(productString) && productString.IndexOf("Keyboard", StringComparison.OrdinalIgnoreCase) >= 0);
+
                 return new DeviceProfile
                 {
-                    ModelName = string.IsNullOrEmpty(productString) ? "CompX Wireless Mouse" : productString,
+                    ModelName = string.IsNullOrEmpty(productString) ? (isKeyboard ? "CompX Wireless Keyboard" : "CompX Wireless Mouse") : productString,
                     VendorId = vid,
                     ProductIds = new ushort[] { pid },
-                    Category = DeviceCategory.Mouse,
+                    Category = isKeyboard ? DeviceCategory.Keyboard : DeviceCategory.Mouse,
                     ProtocolId = "compx"
                 };
             }
@@ -427,6 +541,7 @@ namespace OmniHid.Core.Devices
                                         if (profile != null && profile.VendorId > 0)
                                         {
                                             profile.IsCustomProfile = false;
+                                            profile.IsRegisteredProfile = true;
                                             Register(profile);
                                         }
                                     }
@@ -463,6 +578,7 @@ namespace OmniHid.Core.Devices
                         if (profile != null && profile.VendorId > 0)
                         {
                             profile.IsCustomProfile = true;
+                            profile.IsRegisteredProfile = true;
                             Register(profile);
                         }
                     }
@@ -530,15 +646,35 @@ namespace OmniHid.Core.Devices
 
         private void LoadExternalProfiles()
         {
-            var searchDirs = new List<string>
+            var searchDirs = new List<string>();
+
+            // 1. User application data directory (%APPDATA%\OmniHid\devices)
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            if (!string.IsNullOrEmpty(appData))
             {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OmniHid", "devices"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devices"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\devices"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\devices"),
-                Path.Combine(Directory.GetCurrentDirectory(), "devices"),
-                Path.Combine(Directory.GetCurrentDirectory(), @"..\devices")
-            };
+                searchDirs.Add(Path.Combine(appData, "OmniHid", "devices"));
+            }
+
+            // 2. Application base directory and development parent hierarchy
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (!string.IsNullOrEmpty(baseDir))
+            {
+                searchDirs.Add(Path.Combine(baseDir, "devices"));
+
+                DirectoryInfo dir = new DirectoryInfo(baseDir);
+                for (int depth = 0; depth < 3 && dir.Parent != null; depth++)
+                {
+                    dir = dir.Parent;
+                    searchDirs.Add(Path.Combine(dir.FullName, "devices"));
+                }
+            }
+
+            // 3. Current working directory
+            string currentDir = Directory.GetCurrentDirectory();
+            if (!string.IsNullOrEmpty(currentDir) && !string.Equals(currentDir, baseDir, StringComparison.OrdinalIgnoreCase))
+            {
+                searchDirs.Add(Path.Combine(currentDir, "devices"));
+            }
 
             var processedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -553,6 +689,84 @@ namespace OmniHid.Core.Devices
                     LoadProfilesFromDirectory(fullDir);
                 }
                 catch { }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // Disposal & Gamepad Architecture Classification Helpers
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Checks whether the specified USB PID belongs to a known Microsoft Xbox controller architecture.
+        /// </summary>
+        internal static bool IsXboxGamepadPid(ushort pid)
+        {
+            switch (pid)
+            {
+                case 0x028E: // Xbox 360 Controller (USB)
+                case 0x028F: // Xbox 360 Wireless Controller
+                case 0x0291: // Xbox 360 Wireless Receiver
+                case 0x02D1: // Xbox One Controller (USB)
+                case 0x02DD: // Xbox One Controller (Covert Ops)
+                case 0x02E0: // Xbox One Wireless Controller (Bluetooth)
+                case 0x02E3: // Xbox One Elite Controller
+                case 0x02EA: // Xbox One S Controller (USB)
+                case 0x02FD: // Xbox One S Controller (Bluetooth)
+                case 0x0719: // Xbox 360 Wireless Receiver
+                case 0x0B00: // Xbox Elite Series 2 Controller (USB)
+                case 0x0B05: // Xbox Elite Series 2 Controller (Bluetooth)
+                case 0x0B12: // Xbox Series X/S Controller (USB)
+                case 0x0B13: // Xbox Series X/S Controller (Bluetooth)
+                case 0x0B20: // Xbox Adaptive Controller (USB)
+                case 0x0B21: // Xbox Adaptive Controller (Bluetooth)
+                case 0x0B22: // Xbox Wireless Controller (Gen 4)
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks whether the specified USB PID belongs to a known Sony PlayStation gamepad.
+        /// </summary>
+        internal static bool IsSonyGamepadPid(ushort pid)
+        {
+            switch (pid)
+            {
+                case 0x05C4: // DualShock 4 Gen 1
+                case 0x09CC: // DualShock 4 Gen 2
+                case 0x0BA0: // DualShock 4 Wireless Adapter
+                case 0x0CE6: // DualSense (PS5)
+                case 0x0DF2: // DualSense Edge (PS5)
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Disposes all registered file watchers and debounce timers.
+        /// </summary>
+        public void Dispose()
+        {
+            lock (_syncLock)
+            {
+                if (_hotReloadDebounceTimer != null)
+                {
+                    _hotReloadDebounceTimer.Dispose();
+                    _hotReloadDebounceTimer = null;
+                }
+
+                for (int i = 0; i < _watchers.Count; i++)
+                {
+                    try
+                    {
+                        _watchers[i].EnableRaisingEvents = false;
+                        _watchers[i].Dispose();
+                    }
+                    catch { }
+                }
+                _watchers.Clear();
             }
         }
     }

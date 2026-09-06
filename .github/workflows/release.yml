@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g. 0.0.1)'
+        description: 'Version to release (e.g. 0.0.2)'
         required: false
-        default: '0.0.1'
+        default: '0.0.2'
 
 permissions:
   contents: write
@@ -34,7 +34,7 @@ jobs:
           } elseif ($env:GITHUB_REF -like "refs/tags/v*") {
             $ver = $env:GITHUB_REF.Substring(11) # Strip 'refs/tags/v'
           } else {
-            $ver = "0.0.1"
+            $ver = "0.0.2"
           }
           Write-Host "Releasing version: $ver"
           "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

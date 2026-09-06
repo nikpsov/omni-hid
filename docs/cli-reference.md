@@ -10,8 +10,8 @@
 omni-hid [command|number] [filter] [options]
 ```
 
-- **Without arguments:** Launches the interactive numbered menu (`0`..`8`).
-- **Commands:** Can be called by keyword (`scan`, `list`, `debug`, etc.) or by menu number (`1`..`8`).
+- **Without arguments:** Launches the interactive numbered menu (`0`..`9`).
+- **Commands:** Can be called by keyword (`scan`, `registered`, `list`, `debug`, etc.) or by menu number (`1`..`9`).
 - **Filter:** An optional case-insensitive substring matching USB Vendor ID, Product ID, peripheral model name, manufacturer, or category (e.g. `mouse`, `ardor`, `25a7`, `logitech`).
 
 ---
@@ -31,7 +31,7 @@ Running `omni-hid` without arguments presents the numbered console dashboard:
 ----------------------------------------------------------------------------
 
   SELECT AN ACTION:
-    [1] ⚡ Scan Supported Peripherals & Query Live Battery
+    [1] ⚡ Scan All Peripherals & Live Battery (Standard / Unfiltered)
     [2] 📋 List All System HID Devices & Interfaces (Detailed Breakdown)
     [3] 🔍 Deep Hardware Diagnostics & Protocol Inspection (Debug)
     [4] 🔋 Battery Protocol Hunter & Report Calculator (Dump & Analyze)
@@ -39,12 +39,13 @@ Running `omni-hid` without arguments presents the numbered console dashboard:
     [6] 🔄 Real-Time USB Arrival / Removal Event Monitor
     [7] 🎯 A-B Battery & Charger Calibration (Guided Plug/Unplug Diff Engine)
     [8] 🤖 Export AI-Ready Protocol Specification (.md)
+    [9] 📄 Scan Registered Devices Only (Verified .json Profiles)
     [0] 🚪 Exit
 
-  Enter choice [0-8] or command:
+  Enter choice [0-9] or command:
 ```
 
-In interactive mode, options can also be combined (e.g. entering `1 --all` or `5 mouse`).
+In interactive mode, options can also be combined (e.g. entering `1 -r`, `1 --all`, or `5 mouse`).
 
 ---
 
@@ -52,13 +53,14 @@ In interactive mode, options can also be combined (e.g. entering `1 --all` or `5
 
 ### 1. `scan` — Query Peripheral Battery & Telemetry
 
-Discovers supported wireless and gaming peripherals, executes the respective protocol driver, and displays real-time battery status in a formatted table.
+Discovers supported wireless and gaming peripherals, executes the respective protocol driver, and displays real-time battery status in a formatted table. By default, runs unfiltered (showing both verified devices and vendor heuristics).
 
 ```cmd
 omni-hid scan
 omni-hid scan logitech
 omni-hid scan mouse
 omni-hid scan --all
+omni-hid scan --registered
 ```
 
 #### Example Output
@@ -74,6 +76,7 @@ Category     Device Name                      VID:PID      Battery        Status
 
 #### Flags
 
+- `--registered`, `-r`: Filters output to only display verified peripherals with declarative `.json` profiles (embedded in `devices/**/*.json` or user-defined in `%APPDATA%\OmniHid\devices\`). Unverified vendor heuristics and generic peripherals are excluded.
 - `--all`, `-a`, `--no-dedup`: Disables automatic wired/wireless companion receiver deduplication. Displays all physical and logical endpoints simultaneously, tagging dormant dongles with `⏸ Standby`.
 
 ---
@@ -196,6 +199,18 @@ The generated file includes:
 - Complete HID endpoint topology and report buffer lengths.
 - Feature and Input Report byte dumps.
 - A pre-formatted LLM prompt (for Claude, ChatGPT, or Gemini) containing all hardware traces and requesting a complete C# protocol handler adhering to `IProtocolHandler`.
+
+---
+
+### 9. `registered` — Query Only Verified (.json) Profiles
+
+Scans for peripherals strictly defined in declarative `.json` profile files (bundled in `devices/**/*.json` or placed in `%APPDATA%\OmniHid\devices\`). Unlike standard `scan`, this command completely omits unverified generic devices and dynamic vendor heuristics.
+
+```cmd
+omni-hid registered
+omni-hid 9
+omni-hid scan-registered ardor
+```
 
 ---
 

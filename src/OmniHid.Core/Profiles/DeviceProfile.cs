@@ -58,6 +58,11 @@ namespace OmniHid.Core.Profiles
         public bool IsCustomProfile { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether this profile was loaded from a validated declarative JSON profile definition.
+        /// </summary>
+        public bool IsRegisteredProfile { get; set; }
+
+        /// <summary>
         /// Gets or sets the target HID Usage Page required for configuration commands (e.g. 0xFF02 for Areson mice).
         /// When specified, the interface matching this Usage Page is prioritized during device grouping.
         /// </summary>
@@ -89,6 +94,7 @@ namespace OmniHid.Core.Profiles
             BatteryLifeHours = 0;
             AssignedSlot = -1;
             IsCustomProfile = false;
+            IsRegisteredProfile = false;
             TargetUsagePage = 0;
             TargetUsage = 0;
         }
@@ -111,6 +117,7 @@ namespace OmniHid.Core.Profiles
                 BatteryLifeHours = this.BatteryLifeHours,
                 AssignedSlot = this.AssignedSlot,
                 IsCustomProfile = this.IsCustomProfile,
+                IsRegisteredProfile = this.IsRegisteredProfile,
                 TargetUsagePage = this.TargetUsagePage,
                 TargetUsage = this.TargetUsage
             };

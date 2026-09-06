@@ -52,6 +52,9 @@ namespace OmniHid.Core.Devices
         /// <summary>Gets a value indicating whether this device was loaded from an external JSON profile.</summary>
         public bool IsCustomProfile { get { return _profile != null && _profile.IsCustomProfile; } }
 
+        /// <summary>Gets a value indicating whether this device was instantiated from a validated declarative JSON profile.</summary>
+        public bool IsRegisteredProfile { get { return _profile != null && _profile.IsRegisteredProfile; } }
+
         /// <summary>Most recent battery telemetry snapshot.</summary>
         public BatteryTelemetry Telemetry { get; private set; }
 
@@ -127,6 +130,7 @@ namespace OmniHid.Core.Devices
                 {
                     IsConnected = false;
                 }
+                _cachedInterfacesSnapshot = _interfaces.ToArray();
             }
         }
 
@@ -136,7 +140,12 @@ namespace OmniHid.Core.Devices
         /// </summary>
         public BatteryTelemetry RefreshTelemetry()
         {
-            var currentInterfaces = _interfaces;
+            List<HidDeviceInfo> currentInterfaces;
+            lock (_lock)
+            {
+                currentInterfaces = new List<HidDeviceInfo>(_interfaces);
+            }
+
             bool canRunWithoutHid = _protocol != null && _protocol.CanQueryWithoutHidInterfaces;
             if (currentInterfaces.Count == 0 && !canRunWithoutHid)
             {
@@ -147,7 +156,7 @@ namespace OmniHid.Core.Devices
 
             try
             {
-                Telemetry = _protocol.QueryBattery(_transport, _interfaces, _profile);
+                Telemetry = _protocol.QueryBattery(_transport, currentInterfaces, _profile);
                 if (Telemetry.IsAvailable)
                 {
                     IsConnected = true;

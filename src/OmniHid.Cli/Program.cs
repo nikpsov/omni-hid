@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -25,6 +26,33 @@ namespace OmniHid.Cli
         private static bool _flatListMode = false;
         private static int _sniffTimeoutSeconds = 0;
 
+        static Program()
+        {
+            // Resolves OmniHid.Core.dll from embedded manifest resources when omni-hid.exe is run standalone
+            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+            {
+                try
+                {
+                    string assemblyName = new AssemblyName(args.Name).Name;
+                    if (string.Equals(assemblyName, "OmniHid.Core", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var asm = Assembly.GetExecutingAssembly();
+                        using (var stream = asm.GetManifestResourceStream("OmniHid.Core.dll"))
+                        {
+                            if (stream != null)
+                            {
+                                byte[] buffer = new byte[stream.Length];
+                                stream.Read(buffer, 0, buffer.Length);
+                                return Assembly.Load(buffer);
+                            }
+                        }
+                    }
+                }
+                catch { }
+                return null;
+            };
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // Main Entry Point & Command Dispatch
         // ═══════════════════════════════════════════════════════════════════════
@@ -47,6 +75,7 @@ namespace OmniHid.Cli
             string command = null;
             string filter = null;
             bool showAll = false;
+            bool registeredOnly = false;
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i].Trim();
@@ -58,6 +87,10 @@ namespace OmniHid.Cli
                 else if (aLow == "--all" || aLow == "-a" || aLow == "--no-dedup")
                 {
                     showAll = true;
+                }
+                else if (aLow == "--registered" || aLow == "-r" || aLow == "--registered-only" || aLow == "--json")
+                {
+                    registeredOnly = true;
                 }
                 else if (aLow == "--timeout" && i + 1 < args.Length)
                 {
@@ -92,7 +125,13 @@ namespace OmniHid.Cli
             {
                 case "1":
                 case "scan":
-                    RunScan(filter, showAll);
+                    RunScan(filter, showAll, registeredOnly);
+                    break;
+                case "9":
+                case "registered":
+                case "scan-registered":
+                case "json":
+                    RunScan(filter, showAll, true);
                     break;
                 case "2":
                 case "list":
@@ -160,7 +199,7 @@ namespace OmniHid.Cli
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("  SELECT AN ACTION:");
                 Console.ResetColor();
-                Console.WriteLine("    [1] ⚡ Scan Supported Peripherals & Query Live Battery (type '1 --all' for full list)");
+                Console.WriteLine("    [1] ⚡ Scan All Peripherals & Live Battery (Standard / Unfiltered)");
                 Console.WriteLine("    [2] 📋 List All System HID Devices & Interfaces (Detailed Breakdown)");
                 Console.WriteLine("    [3] 🔍 Deep Hardware Diagnostics & Protocol Inspection (Debug)");
                 Console.WriteLine("    [4] 🔋 Battery Protocol Hunter & Report Calculator (Dump & Analyze)");
@@ -168,9 +207,10 @@ namespace OmniHid.Cli
                 Console.WriteLine("    [6] 🔄 Real-Time USB Arrival / Removal Event Monitor");
                 Console.WriteLine("    [7] 🎯 A-B Battery & Charger Calibration (Guided Plug/Unplug Diff Engine)");
                 Console.WriteLine("    [8] 🤖 Export AI-Ready Protocol Specification (.md)");
+                Console.WriteLine("    [9] 📄 Scan Registered Devices Only (Verified .json Profiles)");
                 Console.WriteLine("    [0] 🚪 Exit");
                 Console.WriteLine();
-                Console.Write("  Enter choice [0-8] or command: ");
+                Console.Write("  Enter choice [0-9] or command: ");
 
                 string rawChoice = Console.ReadLine();
                 string choice = rawChoice != null ? rawChoice.Trim().ToLowerInvariant() : "";
@@ -180,14 +220,31 @@ namespace OmniHid.Cli
                 {
                     case "1":
                     case "scan":
-                        RunScan(null, false);
+                        RunScan(null, false, false);
                         SafeWaitForKey();
                         break;
                     case "1 --all":
                     case "1 -a":
                     case "scan --all":
                     case "scan -a":
-                        RunScan(null, true);
+                        RunScan(null, true, false);
+                        SafeWaitForKey();
+                        break;
+                    case "1 -r":
+                    case "1 --registered":
+                    case "scan -r":
+                    case "scan --registered":
+                    case "9":
+                    case "registered":
+                    case "scan-registered":
+                    case "json":
+                        RunScan(null, false, true);
+                        SafeWaitForKey();
+                        break;
+                    case "9 --all":
+                    case "9 -a":
+                    case "registered --all":
+                        RunScan(null, true, true);
                         SafeWaitForKey();
                         break;
                     case "2":
@@ -237,7 +294,7 @@ namespace OmniHid.Cli
                         return;
                     default:
                         Console.ForegroundColor = ConsoleColor.DarkYellow;
-                        Console.WriteLine("Unknown choice. Please enter a number from 0 to 8.");
+                        Console.WriteLine("Unknown choice. Please enter a number from 0 to 9.");
                         Console.ResetColor();
                         SafeWaitForKey();
                         break;
@@ -302,7 +359,7 @@ namespace OmniHid.Cli
             Console.WriteLine();
             Console.WriteLine("Actions (use name or number):");
             Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine("  [1] scan      [filter]   Detect supported peripherals & query live battery levels");
+            Console.WriteLine("  [1] scan      [filter]   Detect peripherals & query live battery (standard / unfiltered)");
             Console.WriteLine("  [2] list      [filter]   List all connected HID device interfaces, VIDs, PIDs & Usages");
             Console.WriteLine("  [3] debug     [filter]   Deep diagnostic for ALL devices (XInput, PnP, endpoints, protocols)");
             Console.WriteLine("  [4] hunt      [filter]   Automated battery protocol hunter & report calculator (dumps & % heuristics)");
@@ -310,11 +367,13 @@ namespace OmniHid.Cli
             Console.WriteLine("  [6] monitor              Real-time event monitor (watches USB arrivals/removals live)");
             Console.WriteLine("  [7] calibrate [filter]   Guided A-B calibration (diff state on battery vs charging cable)");
             Console.WriteLine("  [8] export    [filter]   Export AI-ready protocol spec (.md) with LLM prompt & dumps");
+            Console.WriteLine("  [9] registered [filter]  Scan only verified peripherals with declarative (.json) profiles");
             Console.WriteLine("  [0] help                 Show this help information");
             Console.ResetColor();
             Console.WriteLine();
             Console.WriteLine("Options:");
             Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("  --registered, -r     [scan] Filter and show only verified declarative (.json) devices");
             Console.WriteLine("  --all, -a            [scan] Show all devices without wired/wireless receiver deduplication");
             Console.WriteLine("  --flat               [list] Show interfaces as a flat table without device grouping");
             Console.WriteLine("  --timeout <sec>      [sniff] Auto-stop capture after <sec> seconds (default: unlimited)");
@@ -550,20 +609,32 @@ namespace OmniHid.Cli
         /// Discovers supported peripherals, queries live battery telemetry, and displays a formatted summary table.
         /// </summary>
         /// <param name="filter">Optional substring filter for peripheral names or IDs.</param>
-        static void RunScan(string filter = null, bool showAll = false)
+        /// <param name="showAll">If true, suppresses wired/wireless dongle deduplication.</param>
+        /// <param name="registeredOnly">If true, shows only devices with validated declarative (.json) profiles.</param>
+        static void RunScan(string filter = null, bool showAll = false, bool registeredOnly = false)
         {
             PrintBanner();
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine(string.IsNullOrEmpty(filter)
-                ? "Scanning for supported wireless & gaming peripherals..."
-                : string.Format("Scanning for peripherals matching '{0}'...", filter));
+            if (registeredOnly)
+            {
+                Console.WriteLine(string.IsNullOrEmpty(filter)
+                    ? "Scanning for registered (.json) wireless & gaming peripherals..."
+                    : string.Format("Scanning for registered (.json) peripherals matching '{0}'...", filter));
+            }
+            else
+            {
+                Console.WriteLine(string.IsNullOrEmpty(filter)
+                    ? "Scanning for supported wireless & gaming peripherals (unfiltered)..."
+                    : string.Format("Scanning for peripherals matching '{0}'...", filter));
+            }
             Console.ResetColor();
             Console.WriteLine();
 
             using (var transport = new Win32HidTransport())
             using (var manager = new OmniManager(transport))
             {
+                manager.RegisteredOnly = registeredOnly;
                 manager.DeduplicateWiredWireless = !showAll;
                 var allDevices = manager.ScanDevices();
                 var devices = new List<IOmniDevice>();
@@ -579,15 +650,33 @@ namespace OmniHid.Cli
                 if (devices.Count == 0)
                 {
                     Console.ForegroundColor = ConsoleColor.DarkYellow;
-                    Console.WriteLine("No recognized peripherals detected.");
-                    Console.WriteLine("Tip: Run 'omni-hid list' (or option [2]) to view all active HID hardware interfaces.");
-                    Console.WriteLine("     Run 'omni-hid hunt' (or option [4]) to reverse-engineer battery reports from any device.");
+                    if (registeredOnly)
+                    {
+                        Console.WriteLine("No registered (.json) peripherals detected.");
+                        Console.WriteLine("Tip: Place your device profile in devices/*.json or %APPDATA%\\OmniHid\\devices\\");
+                        Console.WriteLine("     Run 'omni-hid scan' (or option [1]) to view all detected devices with heuristics.");
+                        Console.WriteLine("     Run 'omni-hid list' (or option [2]) to view all active HID hardware interfaces.");
+                        Console.WriteLine("     Run 'omni-hid hunt' (or option [4]) to reverse-engineer battery reports from any device.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("No recognized peripherals detected.");
+                        Console.WriteLine("Tip: Run 'omni-hid list' (or option [2]) to view all active HID hardware interfaces.");
+                        Console.WriteLine("     Run 'omni-hid hunt' (or option [4]) to reverse-engineer battery reports from any device.");
+                    }
                     Console.ResetColor();
                     return;
                 }
 
                 Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.Write("Note: 📄 = Profile loaded from devices/*.json");
+                if (registeredOnly)
+                {
+                    Console.Write("Mode: Registered .json profiles only (verified hardware)");
+                }
+                else
+                {
+                    Console.Write("Mode: All supported peripherals (Tip: Run 'omni-hid 9' or 'omni-hid scan -r' for .json profiles only)");
+                }
                 if (showAll)
                 {
                     Console.Write("  |  [--all mode: showing all interfaces without wired deduplication]");

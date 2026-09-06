@@ -14,6 +14,12 @@ namespace OmniHid.Core.Abstractions
         IReadOnlyList<IOmniDevice> ConnectedDevices { get; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether only peripherals with validated declarative JSON profiles are tracked.
+        /// When true, unprofiled generic peripherals and dynamic vendor fallbacks are excluded.
+        /// </summary>
+        bool RegisteredOnly { get; set; }
+
+        /// <summary>
         /// Raised when a new peripheral device is discovered and connected.
         /// </summary>
         event Action<IOmniDevice> DeviceConnected;

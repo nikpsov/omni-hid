@@ -27,6 +27,7 @@ namespace OmniHid.Core.Transport.Win32
 
         private Thread _thread;
         private InternalWatcherWindow _window;
+        private ApplicationContext _context;
         private volatile bool _disposed;
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -44,9 +45,10 @@ namespace OmniHid.Core.Transport.Win32
                 {
                     try
                     {
+                        _context = new ApplicationContext();
                         _window = new InternalWatcherWindow(this);
                         initEvt.Set();
-                        Application.Run();
+                        Application.Run(_context);
                     }
                     catch
                     {
@@ -87,17 +89,19 @@ namespace OmniHid.Core.Transport.Win32
             if (_window != null)
             {
                 try { _window.Dispose(); } catch { }
+                _window = null;
             }
 
-            try
+            if (_context != null)
             {
-                Application.ExitThread();
+                try { _context.ExitThread(); } catch { }
+                _context = null;
             }
-            catch { }
 
             if (_thread != null && _thread.IsAlive)
             {
                 try { _thread.Join(500); } catch { }
+                _thread = null;
             }
         }
 

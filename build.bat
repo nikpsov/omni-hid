@@ -32,9 +32,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/2] Compiling omni-hid.exe (CLI)...
+echo [2/2] Compiling omni-hid.exe (CLI standalone)...
 "%CSC_PATH%" /nologo /target:exe /optimize+ /out:bin\omni-hid.exe ^
     /reference:bin\OmniHid.Core.dll ^
+    /resource:bin\OmniHid.Core.dll,OmniHid.Core.dll ^
     /recurse:src\OmniHid.Cli\*.cs
 
 if errorlevel 1 (

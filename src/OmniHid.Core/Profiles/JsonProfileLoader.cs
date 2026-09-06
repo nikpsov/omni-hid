@@ -39,6 +39,7 @@ namespace OmniHid.Core.Profiles
                         if (profile != null && profile.VendorId > 0)
                         {
                             profile.IsCustomProfile = true;
+                            profile.IsRegisteredProfile = true;
                             profiles.Add(profile);
                         }
                     }
@@ -125,7 +126,8 @@ namespace OmniHid.Core.Profiles
                 BatteryLifeHours = batteryLife,
                 TargetUsagePage = targetUsagePage,
                 TargetUsage = targetUsage,
-                Capabilities = capabilities
+                Capabilities = capabilities,
+                IsRegisteredProfile = true
             };
         }
 

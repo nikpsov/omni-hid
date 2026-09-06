@@ -151,7 +151,7 @@ class Program
 
 ## CLI Diagnostic Toolkit
 
-All commands can be invoked by keyword or interactive menu number (`0`..`8`):
+All commands can be invoked by keyword or interactive menu number (`0`..`9`):
 
 ```cmd
 omni-hid [command|number] [filter] [options]
@@ -159,7 +159,7 @@ omni-hid [command|number] [filter] [options]
 
 | # | Command | Syntax | Description |
 | :-: | :--- | :--- | :--- |
-| `[1]` | `scan` | `omni-hid scan [filter] [--all]` | Scans supported peripherals and queries live battery percentage, state, and voltage. |
+| `[1]` | `scan` | `omni-hid scan [filter] [--all] [-r]` | Scans supported peripherals and queries live battery percentage, state, and voltage. |
 | `[2]` | `list` | `omni-hid list [filter] [--flat]` | Dumps all Windows HID interfaces grouped by physical device (`VID:PID`) with report buffer sizes. |
 | `[3]` | `debug` | `omni-hid debug [filter]` | Full hardware audit: XInput slots 0–3, IC Fingerprinting, endpoint inspection, and protocol coverage. |
 | `[4]` | `hunt` | `omni-hid hunt [filter]` | Automated Feature report sweep (`0x00`..`0xFF`), value range analysis, and Top-5 candidate battery byte scoring. |
@@ -167,6 +167,7 @@ omni-hid [command|number] [filter] [options]
 | `[6]` | `monitor` | `omni-hid monitor` | Real-time USB PnP arrival/removal event tracker via Win32 `WM_DEVICECHANGE`. |
 | `[7]` | `calibrate` | `omni-hid calibrate [filter]` | Guided A-B calibration wizard: compares state on battery vs charging cable to isolate charging and battery bytes. |
 | `[8]` | `export` | `omni-hid export [filter]` | Generates `device_spec_<VID>_<PID>.md` with endpoint topology and a ready-made LLM prompt for writing a C# driver. |
+| `[9]` | `registered` | `omni-hid registered [filter]` | Scans only verified peripherals with declarative `.json` profiles (omits heuristics/unprofiled devices). |
 | `[0]` | `help` | `omni-hid help` | Displays syntax, options, and usage examples. |
 
 ---

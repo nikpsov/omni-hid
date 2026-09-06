@@ -60,6 +60,11 @@ namespace OmniHid.Core.Abstractions
         bool IsCustomProfile { get; }
 
         /// <summary>
+        /// Gets a value indicating whether this device was instantiated from a validated declarative JSON profile.
+        /// </summary>
+        bool IsRegisteredProfile { get; }
+
+        /// <summary>
         /// Gets the most recent cached battery and power telemetry snapshot for this device.
         /// </summary>
         BatteryTelemetry Telemetry { get; }

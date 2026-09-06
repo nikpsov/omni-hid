@@ -43,6 +43,13 @@ namespace OmniHid.Core
         /// </summary>
         public bool DeduplicateWiredWireless { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether only peripherals with validated declarative JSON profiles are tracked.
+        /// When <c>true</c>, unprofiled generic peripherals and dynamic vendor fallbacks are excluded.
+        /// Default is <c>false</c>.
+        /// </summary>
+        public bool RegisteredOnly { get; set; }
+
         /// <summary>Raised when a new peripheral device is discovered and connected.</summary>
         public event Action<IOmniDevice> DeviceConnected;
 
@@ -68,6 +75,7 @@ namespace OmniHid.Core
         private readonly object _lock = new object();
         private readonly IHidTransport _transport;
         private readonly DeviceRegistry _registry;
+        private readonly bool _ownsRegistry;
         private readonly Dictionary<string, IProtocolHandler> _protocols = new Dictionary<string, IProtocolHandler>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, OmniDevice> _activeDevices = new Dictionary<string, OmniDevice>();
         private readonly HashSet<string> _seenDeviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -100,6 +108,7 @@ namespace OmniHid.Core
         public OmniManager(IHidTransport transport = null, DeviceRegistry registry = null)
         {
             _transport = transport ?? new Win32HidTransport();
+            _ownsRegistry = (registry == null);
             _registry = registry ?? new DeviceRegistry();
 
             // Register standard protocol drivers
@@ -133,6 +142,7 @@ namespace OmniHid.Core
 
             _registry.ProfilesReloaded += OnProfilesReloaded;
             DeduplicateWiredWireless = true;
+            RegisteredOnly = false;
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -285,12 +295,13 @@ namespace OmniHid.Core
                         }
                     }
 
-                    DeviceProfile profile = _registry.FindProfile(vid, pid, productString);
-                    if (profile == null)
+                    DeviceProfile profile = _registry.FindProfile(vid, pid, productString, DeviceCategory.Unknown, !RegisteredOnly);
+                    if (profile == null && !RegisteredOnly)
                     {
                         profile = DetectGenericPeripheral(vid, pid, productString, devList);
                     }
                     if (profile == null) continue;
+                    if (RegisteredOnly && !profile.IsRegisteredProfile) continue;
 
                     IProtocolHandler protocol;
                     if (!_protocols.TryGetValue(profile.ProtocolId, out protocol))
@@ -358,7 +369,7 @@ namespace OmniHid.Core
                         int hidXboxCount = 0;
                         foreach (var grp in logicalGroups.Values)
                         {
-                            if (grp.Profile != null && (grp.Profile.VendorId == 0x045E || grp.Profile.ProtocolId == "xbox-controller"))
+                            if (grp.Profile != null && (grp.Profile.ProtocolId == "xbox-controller" || (grp.Profile.VendorId == 0x045E && grp.Profile.Category == DeviceCategory.Gamepad)))
                             {
                                 hidXboxCount++;
                             }
@@ -385,9 +396,14 @@ namespace OmniHid.Core
                                 string logicalKey = string.Format("045E:Xbox_Controller_Slot_{0}:Gamepad:xbox-controller", slot);
                                 if (!logicalGroups.ContainsKey(logicalKey))
                                 {
-                                    DeviceProfile xboxProfile = _registry.FindProfile(0x045E, 0x0B12, "Xbox Wireless Controller");
+                                    DeviceProfile xboxProfile = _registry.FindProfile(0x045E, 0x0B12, "Xbox Wireless Controller", DeviceCategory.Gamepad, !RegisteredOnly);
                                     if (xboxProfile == null)
                                     {
+                                        if (RegisteredOnly)
+                                        {
+                                            continue;
+                                        }
+
                                         xboxProfile = new DeviceProfile
                                         {
                                             ModelName = string.Format("Xbox Wireless Controller (Slot {0})", slot + 1),
@@ -436,7 +452,7 @@ namespace OmniHid.Core
                         int slotIdx = 0;
                         foreach (var grp in logicalGroups.Values)
                         {
-                            if (grp.Profile != null && (grp.Profile.VendorId == 0x045E || grp.Profile.ProtocolId == "xbox-controller"))
+                            if (grp.Profile != null && (grp.Profile.ProtocolId == "xbox-controller" || (grp.Profile.VendorId == 0x045E && grp.Profile.Category == DeviceCategory.Gamepad)))
                             {
                                 if (grp.Profile.AssignedSlot < 0 && slotIdx < activeSlotCount)
                                 {
@@ -627,10 +643,11 @@ namespace OmniHid.Core
         /// <returns>Normalized grouping key representing the physical device.</returns>
         internal static string ExtractPhysicalDeviceId(string devicePath, ushort vid, ushort pid, ushort usagePage = 0, ushort usage = 0)
         {
-            // 1. Detect gamepads: UsagePage 0x0001 with Usage 0x0004/0x0005, XInput &ig_ paths, or Microsoft Gamepad VID
+            // 1. Detect gamepads: UsagePage 0x0001 with Usage 0x0004/0x0005, XInput &ig_ paths, or known gamepad PIDs
             bool isGamepad = (usagePage == 0x0001 && (usage == 0x0004 || usage == 0x0005)) ||
                              (!string.IsNullOrEmpty(devicePath) && devicePath.IndexOf("&ig_", StringComparison.OrdinalIgnoreCase) >= 0) ||
-                             (vid == 0x045E);
+                             (vid == 0x045E && DeviceRegistry.IsXboxGamepadPid(pid)) ||
+                             (vid == 0x054C && DeviceRegistry.IsSonyGamepadPid(pid));
 
             if (isGamepad && !string.IsNullOrEmpty(devicePath))
             {
@@ -745,6 +762,14 @@ namespace OmniHid.Core
             {
                 _debounceTimer.Dispose();
                 _debounceTimer = null;
+            }
+            if (_registry != null)
+            {
+                _registry.ProfilesReloaded -= OnProfilesReloaded;
+                if (_ownsRegistry)
+                {
+                    _registry.Dispose();
+                }
             }
             _transport.Dispose();
         }

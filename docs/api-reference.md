@@ -46,6 +46,7 @@ public interface IOmniManager : IDisposable
 | Property | Type | Description |
 | :--- | :--- | :--- |
 | `ConnectedDevices` | `IReadOnlyList<IOmniDevice>` | Thread-safe snapshot of all currently tracked and active devices. |
+| `RegisteredOnly` | `bool` | Gets or sets whether only peripherals with validated declarative (.json) profiles are tracked. |
 
 #### Methods
 
@@ -88,6 +89,7 @@ public interface IOmniDevice
 | `IsConnected` | `bool` | `true` if peripheral is currently reachable and online. |
 | `IsWired` | `bool` | `true` if connected via direct USB cable rather than wireless receiver. |
 | `IsCustomProfile` | `bool` | `true` if instantiated from an external JSON profile. |
+| `IsRegisteredProfile` | `bool` | `true` if instantiated from a validated declarative JSON profile. |
 | `Telemetry` | `BatteryTelemetry` | Most recent cached battery telemetry snapshot. |
 | `Interfaces` | `IReadOnlyList<HidDeviceInfo>` | Aggregated physical Win32 HID interfaces belonging to this device. |
 

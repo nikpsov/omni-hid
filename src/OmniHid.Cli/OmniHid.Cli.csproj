@@ -48,5 +48,12 @@
       <Name>OmniHid.Core</Name>
     </ProjectReference>
   </ItemGroup>
+  <Target Name="EmbedCoreDll" BeforeTargets="PrepareResources">
+    <ItemGroup>
+      <EmbeddedResource Include="..\..\bin\OmniHid.Core.dll" Condition="Exists('..\..\bin\OmniHid.Core.dll')">
+        <LogicalName>OmniHid.Core.dll</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
