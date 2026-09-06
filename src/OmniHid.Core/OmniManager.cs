@@ -21,10 +21,6 @@ namespace OmniHid.Core
         // Public Properties & Events
         // ═══════════════════════════════════════════════════════════════════════
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // Public Properties & Events
-        // ═══════════════════════════════════════════════════════════════════════
-
         private volatile IOmniDevice[] _connectedDevicesSnapshot = new IOmniDevice[0];
 
         /// <summary>
@@ -266,7 +262,7 @@ namespace OmniHid.Core
                 Dictionary<string, List<HidDeviceInfo>> byPhysicalDevice = new Dictionary<string, List<HidDeviceInfo>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var dev in allHid)
                 {
-                    string physId = ExtractPhysicalDeviceId(dev.DevicePath, dev.VendorId, dev.ProductId, dev.UsagePage, dev.Usage);
+                    string physId = ExtractPhysicalDeviceId(dev.DevicePath, dev.VendorId, dev.ProductId, dev.UsagePage, dev.Usage, _registry);
                     List<HidDeviceInfo> list;
                     if (!byPhysicalDevice.TryGetValue(physId, out list))
                     {
@@ -640,12 +636,14 @@ namespace OmniHid.Core
         /// <param name="pid">USB Product Identifier.</param>
         /// <param name="usagePage">HID Usage Page descriptor.</param>
         /// <param name="usage">HID Usage descriptor.</param>
+        /// <param name="registry">Optional device registry to check registered profile categories.</param>
         /// <returns>Normalized grouping key representing the physical device.</returns>
-        internal static string ExtractPhysicalDeviceId(string devicePath, ushort vid, ushort pid, ushort usagePage = 0, ushort usage = 0)
+        internal static string ExtractPhysicalDeviceId(string devicePath, ushort vid, ushort pid, ushort usagePage = 0, ushort usage = 0, DeviceRegistry registry = null)
         {
-            // 1. Detect gamepads: UsagePage 0x0001 with Usage 0x0004/0x0005, XInput &ig_ paths, or known gamepad PIDs
+            // 1. Detect gamepads: UsagePage 0x0001 with Usage 0x0004/0x0005, XInput &ig_ paths, registered gamepad profiles, or known gamepad PIDs
             bool isGamepad = (usagePage == 0x0001 && (usage == 0x0004 || usage == 0x0005)) ||
                              (!string.IsNullOrEmpty(devicePath) && devicePath.IndexOf("&ig_", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                             (registry != null && registry.IsGamepad(vid, pid)) ||
                              (vid == 0x045E && DeviceRegistry.IsXboxGamepadPid(pid)) ||
                              (vid == 0x054C && DeviceRegistry.IsSonyGamepadPid(pid));
 

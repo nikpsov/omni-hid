@@ -45,7 +45,8 @@ namespace OmniHid.Core.Devices
         {
             get
             {
-                return _profile != null && _profile.IsWiredProductId(ProductId);
+                return (_profile != null && _profile.IsWiredProductId(ProductId)) ||
+                       (Telemetry != null && Telemetry.IsWired);
             }
         }
 

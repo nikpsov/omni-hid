@@ -84,7 +84,7 @@ namespace OmniHid.Core.Devices
             var handler = ProfilesReloaded;
             if (handler != null)
             {
-                try { handler(); } catch { }
+                try { handler(); } catch (Exception) { /* Suppress subscriber exceptions to prevent crash */ }
             }
         }
 
@@ -548,11 +548,17 @@ namespace OmniHid.Core.Devices
                                 }
                             }
                         }
-                        catch { }
+                        catch (Exception)
+                        {
+                            // Skip corrupt or unreadable embedded profile resource
+                        }
                     }
                 }
             }
-            catch { }
+            catch (Exception)
+            {
+                // Ignore assembly manifest resource reflection errors
+            }
         }
 
         /// <summary>
@@ -582,10 +588,16 @@ namespace OmniHid.Core.Devices
                             Register(profile);
                         }
                     }
-                    catch { }
+                    catch (Exception)
+                    {
+                        // Ignore unreadable or invalid external JSON profile file
+                    }
                 }
             }
-            catch { }
+            catch (Exception)
+            {
+                // Ignore directory enumeration or permission errors
+            }
         }
 
         private void SetupHotReloadWatcher(string directoryPath)
@@ -621,7 +633,10 @@ namespace OmniHid.Core.Devices
                     _watchers.Add(watcher);
                 }
             }
-            catch { }
+            catch (Exception)
+            {
+                // FileSystemWatcher setup failed (e.g. insufficient privileges or invalid path)
+            }
         }
 
         private void OnFileChanged()
@@ -688,13 +703,36 @@ namespace OmniHid.Core.Devices
 
                     LoadProfilesFromDirectory(fullDir);
                 }
-                catch { }
+                catch (Exception)
+                {
+                    // Ignore directory access permission or path resolution errors
+                }
             }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Disposal & Gamepad Architecture Classification Helpers
         // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Determines whether the specified VID and PID correspond to a recognized gamepad controller.
+        /// Checks registered JSON profiles first, then falls back to known vendor hardware architecture IDs.
+        /// </summary>
+        /// <param name="vid">16-bit USB Vendor ID.</param>
+        /// <param name="pid">16-bit USB Product ID.</param>
+        /// <returns><c>true</c> if recognized as a gamepad; otherwise, <c>false</c>.</returns>
+        public bool IsGamepad(ushort vid, ushort pid)
+        {
+            var profile = FindRegisteredProfile(vid, pid);
+            if (profile != null && profile.Category == DeviceCategory.Gamepad)
+            {
+                return true;
+            }
+
+            if (vid == 0x045E && IsXboxGamepadPid(pid)) return true;
+            if (vid == 0x054C && IsSonyGamepadPid(pid)) return true;
+            return false;
+        }
 
         /// <summary>
         /// Checks whether the specified USB PID belongs to a known Microsoft Xbox controller architecture.
@@ -764,7 +802,10 @@ namespace OmniHid.Core.Devices
                         _watchers[i].EnableRaisingEvents = false;
                         _watchers[i].Dispose();
                     }
-                    catch { }
+                    catch (Exception)
+                    {
+                        // Ignore watcher disposal exceptions
+                    }
                 }
                 _watchers.Clear();
             }

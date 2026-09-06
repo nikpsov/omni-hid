@@ -5,7 +5,10 @@
     "0x0B12",
     "0x0B13",
     "0x0B00",
-    "0x0B05"
+    "0x0B05",
+    "0x0B20",
+    "0x0B21",
+    "0x0B22"
   ],
   "category": "Gamepad",
   "protocol": "xbox-controller",

@@ -34,7 +34,6 @@
   <ItemGroup>
     <Reference Include="System"><Private>false</Private></Reference>
     <Reference Include="System.Core"><Private>false</Private></Reference>
-    <Reference Include="System.Windows.Forms"><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Abstractions\*.cs" />

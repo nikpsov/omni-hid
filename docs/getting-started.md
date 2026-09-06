@@ -50,7 +50,7 @@ dotnet build OmniHid.sln -c Release
 Once compiled, run `omni-hid.exe` directly from `bin\`:
 
 ```cmd
-# Run interactive menu (options 0 to 8)
+# Run interactive menu (options 0 to 9)
 bin\omni-hid.exe
 
 # Scan and display battery levels for all connected devices
@@ -63,7 +63,7 @@ bin\omni-hid.exe scan mouse
 bin\omni-hid.exe scan --all
 ```
 
-For full details on all 8 CLI subcommands and diagnostic tools, see the [CLI Reference](cli-reference.md).
+For full details on all 9 CLI subcommands and diagnostic tools, see the [CLI Reference](cli-reference.md).
 
 ---
 

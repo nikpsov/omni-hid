@@ -116,7 +116,7 @@ namespace OmniHid.Core.Protocols
             if (featureCandidates.Count == 0) featureCandidates = interfaces;
             if (inputCandidates.Count == 0) inputCandidates = interfaces;
 
-            return ExecuteOverlappedQuery(featureCandidates, inputCandidates, cmdReport);
+            return ExecuteOverlappedQuery(transport, featureCandidates, inputCandidates, cmdReport);
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -126,7 +126,9 @@ namespace OmniHid.Core.Protocols
         /// <summary>
         /// Builds a 17-byte command packet with Areson checksum byte at offset 16.
         /// </summary>
-        private static byte[] BuildQueryCommand(byte cmd)
+        /// <param name="cmd">The command opcode (e.g. <see cref="CMD_QUERY_STATUS"/>).</param>
+        /// <returns>A 17-byte command frame ready to transmit.</returns>
+        public static byte[] BuildQueryCommand(byte cmd)
         {
             byte[] packet = new byte[PACKET_LENGTH];
             packet[0] = REPORT_ID_FEATURE_CMD;
@@ -147,11 +149,12 @@ namespace OmniHid.Core.Protocols
         /// and waits for the mouse response frame.
         /// </summary>
         private static BatteryTelemetry ExecuteOverlappedQuery(
+            IHidTransport transport,
             List<HidDeviceInfo> featureDevs,
             List<HidDeviceInfo> inputDevs,
             byte[] cmdReport)
         {
-            List<ActiveReader> readers = new List<ActiveReader>();
+            List<HidOverlappedReader> readers = new List<HidOverlappedReader>();
             List<WaitHandle> waitHandles = new List<WaitHandle>();
 
             try
@@ -159,10 +162,10 @@ namespace OmniHid.Core.Protocols
                 // 1. Pre-listen on all candidate input collections before sending command
                 foreach (var inDev in inputDevs)
                 {
-                    SafeFileHandle hRead = Win32HidTransport.OpenDevice(inDev.DevicePath, Win32HidNative.GENERIC_READ, true);
-                    if (!hRead.IsInvalid)
+                    int len = inDev.InputReportByteLength > 0 ? inDev.InputReportByteLength : 17;
+                    var reader = transport.OpenOverlappedReader(inDev, Math.Max(17, len), REPORT_ID_INPUT_RESP);
+                    if (reader != null)
                     {
-                        ActiveReader reader = new ActiveReader(inDev, hRead);
                         if (reader.StartRead())
                         {
                             readers.Add(reader);
@@ -180,50 +183,42 @@ namespace OmniHid.Core.Protocols
                 bool featureSent = false;
                 foreach (var fDev in featureDevs)
                 {
-                    using (SafeFileHandle hWrite = Win32HidTransport.OpenDevice(fDev.DevicePath, Win32HidNative.GENERIC_WRITE, false))
+                    // A. Standard Report ID 0x08 command frame
+                    byte[] sendBuf = cmdReport;
+                    if (fDev.FeatureReportByteLength > cmdReport.Length)
                     {
-                        if (!hWrite.IsInvalid)
+                        sendBuf = new byte[fDev.FeatureReportByteLength];
+                        Array.Copy(cmdReport, sendBuf, cmdReport.Length);
+                    }
+
+                    if (transport.SendReport(fDev.DevicePath, sendBuf))
+                    {
+                        featureSent = true;
+                        break;
+                    }
+
+                    // B. Unnumbered Feature Report frame (Report ID 0x00 prefix for single-collection endpoints)
+                    if (fDev.FeatureReportByteLength >= 65)
+                    {
+                        byte[] unnumbered = new byte[fDev.FeatureReportByteLength];
+                        unnumbered[0] = 0x00;
+                        Array.Copy(cmdReport, 0, unnumbered, 1, Math.Min(cmdReport.Length, unnumbered.Length - 1));
+
+                        if (transport.SendReport(fDev.DevicePath, unnumbered))
                         {
-                            // A. Standard Report ID 0x08 command frame
-                            byte[] sendBuf = cmdReport;
-                            if (fDev.FeatureReportByteLength > cmdReport.Length)
-                            {
-                                sendBuf = new byte[fDev.FeatureReportByteLength];
-                                Array.Copy(cmdReport, sendBuf, cmdReport.Length);
-                            }
+                            featureSent = true;
+                            break;
+                        }
+                    }
 
-                            if (Win32HidNative.HidD_SetFeature(hWrite, sendBuf, (uint)sendBuf.Length) ||
-                                Win32HidNative.HidD_SetOutputReport(hWrite, sendBuf, (uint)sendBuf.Length))
-                            {
-                                featureSent = true;
-                                break;
-                            }
-
-                            // B. Unnumbered Feature Report frame (Report ID 0x00 prefix for single-collection endpoints)
-                            if (fDev.FeatureReportByteLength >= 65)
-                            {
-                                byte[] unnumbered = new byte[fDev.FeatureReportByteLength];
-                                unnumbered[0] = 0x00;
-                                Array.Copy(cmdReport, 0, unnumbered, 1, Math.Min(cmdReport.Length, unnumbered.Length - 1));
-
-                                if (Win32HidNative.HidD_SetFeature(hWrite, unnumbered, (uint)unnumbered.Length) ||
-                                    Win32HidNative.HidD_SetOutputReport(hWrite, unnumbered, (uint)unnumbered.Length))
-                                {
-                                    featureSent = true;
-                                    break;
-                                }
-                            }
-
-                            // C. Short 2-byte Output Report (supported by secondary keyboard endpoints)
-                            if (fDev.OutputReportByteLength == 2)
-                            {
-                                byte[] shortOut = new byte[] { 0x00, 0x04 };
-                                if (Win32HidNative.HidD_SetOutputReport(hWrite, shortOut, (uint)shortOut.Length))
-                                {
-                                    featureSent = true;
-                                    break;
-                                }
-                            }
+                    // C. Short 2-byte Output Report (supported by secondary keyboard endpoints)
+                    if (fDev.OutputReportByteLength == 2)
+                    {
+                        byte[] shortOut = new byte[] { 0x00, 0x04 };
+                        if (transport.WriteOutputReport(fDev.DevicePath, shortOut))
+                        {
+                            featureSent = true;
+                            break;
                         }
                     }
                 }
@@ -319,123 +314,6 @@ namespace OmniHid.Core.Protocols
                 state = BatteryState.Discharging;
 
             return BatteryTelemetry.Online(level, state);
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // Asynchronous Reader Tracking Class
-        // ═══════════════════════════════════════════════════════════════════════
-
-        private class ActiveReader : IDisposable
-        {
-            public HidDeviceInfo Device { get; private set; }
-            public SafeFileHandle Handle { get; private set; }
-            public byte[] Buffer { get; private set; }
-            public ManualResetEvent WaitEvent { get; private set; }
-            private IntPtr _pOverlapped;
-            private bool _isPending = false;
-            private bool _completed = false;
-
-            public ActiveReader(HidDeviceInfo dev, SafeFileHandle handle)
-            {
-                Device = dev;
-                Handle = handle;
-                int len = dev.InputReportByteLength > 0 ? dev.InputReportByteLength : 17;
-                Buffer = new byte[Math.Max(17, len)];
-                Buffer[0] = REPORT_ID_INPUT_RESP;
-                WaitEvent = new ManualResetEvent(false);
-
-                NativeOverlapped ov = new NativeOverlapped { EventHandle = WaitEvent.SafeWaitHandle.DangerousGetHandle() };
-                _pOverlapped = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeOverlapped)));
-                Marshal.StructureToPtr(ov, _pOverlapped, false);
-            }
-
-            public bool StartRead()
-            {
-                uint bytesRead;
-                bool ok = Win32HidNative.ReadFile(Handle, Buffer, (uint)Buffer.Length, out bytesRead, _pOverlapped);
-                if (!ok)
-                {
-                    int err = Marshal.GetLastWin32Error();
-                    if (err == Win32HidNative.ERROR_IO_PENDING)
-                    {
-                        _isPending = true;
-                        return true;
-                    }
-                    return false;
-                }
-                _completed = true;
-                return true;
-            }
-
-            public bool CheckCompleted()
-            {
-                if (_completed) return true;
-                if (!_isPending) return false;
-
-                uint bytesTransferred;
-                if (Win32HidNative.GetOverlappedResult(Handle, _pOverlapped, out bytesTransferred, false))
-                {
-                    _completed = true;
-                    return true;
-                }
-                return false;
-            }
-
-            public bool RestartRead()
-            {
-                _completed = false;
-                _isPending = false;
-                WaitEvent.Reset();
-                NativeOverlapped ov = new NativeOverlapped { EventHandle = WaitEvent.SafeWaitHandle.DangerousGetHandle() };
-                Marshal.StructureToPtr(ov, _pOverlapped, false);
-
-                uint bytesRead;
-                bool ok = Win32HidNative.ReadFile(Handle, Buffer, (uint)Buffer.Length, out bytesRead, _pOverlapped);
-                if (!ok)
-                {
-                    int err = Marshal.GetLastWin32Error();
-                    if (err == Win32HidNative.ERROR_IO_PENDING)
-                    {
-                        _isPending = true;
-                        return true;
-                    }
-                    return false;
-                }
-                _completed = true;
-                WaitEvent.Set();
-                return true;
-            }
-
-            public void Dispose()
-            {
-                try
-                {
-                    if (_isPending && !_completed && !Handle.IsInvalid && !Handle.IsClosed)
-                    {
-                        Win32HidNative.CancelIoEx(Handle, _pOverlapped);
-                        uint bytesRead;
-                        Win32HidNative.GetOverlappedResult(Handle, _pOverlapped, out bytesRead, true);
-                    }
-                }
-                catch { }
-
-                if (_pOverlapped != IntPtr.Zero)
-                {
-                    Marshal.FreeHGlobal(_pOverlapped);
-                    _pOverlapped = IntPtr.Zero;
-                }
-
-                if (WaitEvent != null)
-                {
-                    WaitEvent.Close();
-                    WaitEvent = null;
-                }
-
-                if (Handle != null && !Handle.IsInvalid && !Handle.IsClosed)
-                {
-                    Handle.Close();
-                }
-            }
         }
     }
 }

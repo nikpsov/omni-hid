@@ -109,8 +109,8 @@ namespace OmniHid.Core.Profiles
             {
                 ModelName = this.ModelName,
                 VendorId = this.VendorId,
-                ProductIds = this.ProductIds,
-                WiredProductIds = this.WiredProductIds,
+                ProductIds = this.ProductIds != null ? (ushort[])this.ProductIds.Clone() : new ushort[0],
+                WiredProductIds = this.WiredProductIds != null ? (ushort[])this.WiredProductIds.Clone() : new ushort[0],
                 Category = this.Category,
                 ProtocolId = this.ProtocolId,
                 Capabilities = this.Capabilities,
@@ -136,14 +136,6 @@ namespace OmniHid.Core.Profiles
                 {
                     if (WiredProductIds[i] == pid) return true;
                 }
-                return false;
-            }
-
-            // Automatic heuristic: if profile declares multiple Product IDs (e.g. wired cable + wireless dongle),
-            // the first PID is by standard peripheral convention the wired USB connection.
-            if (ProductIds != null && ProductIds.Length > 1)
-            {
-                return pid == ProductIds[0];
             }
 
             return false;

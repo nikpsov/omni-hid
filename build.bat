@@ -24,7 +24,6 @@ for /r "devices" %%f in (*.json) do (
     set "RESOURCES=!RESOURCES! /resource:"%%f",%%~nxf"
 )
 "%CSC_PATH%" /nologo /target:library /optimize+ /out:bin\OmniHid.Core.dll ^
-    /reference:System.Windows.Forms.dll ^
     /recurse:src\OmniHid.Core\*.cs !RESOURCES!
 
 if errorlevel 1 (

@@ -224,7 +224,7 @@ namespace OmniHid.Core.Diagnostics
                     ChipsetFamily = string.Format("Generic OEM Wireless ({0} Vendor Endpoints)", vendorEps),
                     Confidence = IcFingerprintConfidence.Low,
                     Description = string.Format("Device exposes {0} vendor-defined collection(s). Specific IC signature is unindexed.", vendorEps),
-                    RecommendedApproach = "Use option [7] A-B Guided Calibration or option [4] Hunter to reverse-engineer report offsets."
+                    RecommendedApproach = "Perform differential A-B charging calibration or sweep report IDs to reverse-engineer report offsets."
                 };
             }
 

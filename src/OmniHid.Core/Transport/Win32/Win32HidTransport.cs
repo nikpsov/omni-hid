@@ -151,21 +151,29 @@ namespace OmniHid.Core.Transport.Win32
 
                 if (Win32HidNative.HidD_GetProductString(handle, _tlStrBuf, (uint)_tlStrBuf.Length))
                 {
-                    info.ProductString = Encoding.Unicode.GetString(_tlStrBuf).TrimEnd('\0');
+                    info.ProductString = ExtractNullTerminatedString(_tlStrBuf);
                 }
                 Array.Clear(_tlStrBuf, 0, _tlStrBuf.Length);
                 if (Win32HidNative.HidD_GetManufacturerString(handle, _tlStrBuf, (uint)_tlStrBuf.Length))
                 {
-                    info.ManufacturerString = Encoding.Unicode.GetString(_tlStrBuf).TrimEnd('\0');
+                    info.ManufacturerString = ExtractNullTerminatedString(_tlStrBuf);
                 }
                 Array.Clear(_tlStrBuf, 0, _tlStrBuf.Length);
                 if (Win32HidNative.HidD_GetSerialNumberString(handle, _tlStrBuf, (uint)_tlStrBuf.Length))
                 {
-                    info.SerialNumber = Encoding.Unicode.GetString(_tlStrBuf).TrimEnd('\0');
+                    info.SerialNumber = ExtractNullTerminatedString(_tlStrBuf);
                 }
 
                 results.Add(info);
             }
+        }
+
+        private static string ExtractNullTerminatedString(byte[] buffer)
+        {
+            if (buffer == null || buffer.Length == 0) return null;
+            string full = Encoding.Unicode.GetString(buffer);
+            int nullIdx = full.IndexOf('\0');
+            return nullIdx >= 0 ? full.Substring(0, nullIdx).Trim() : full.Trim();
         }
 
         [ThreadStatic]
@@ -227,6 +235,27 @@ namespace OmniHid.Core.Transport.Win32
                 uint written;
                 return Win32HidNative.WriteFile(handle, buffer, (uint)buffer.Length, out written, IntPtr.Zero);
             }
+        }
+
+        /// <summary>
+        /// Sends a command report to the target device, attempting <see cref="SetFeatureReport"/> first with fallback to <see cref="WriteOutputReport"/>.
+        /// </summary>
+        public bool SendReport(string devicePath, byte[] buffer)
+        {
+            if (string.IsNullOrEmpty(devicePath) || buffer == null || buffer.Length == 0) return false;
+            if (SetFeatureReport(devicePath, buffer)) return true;
+            return WriteOutputReport(devicePath, buffer);
+        }
+
+        /// <summary>
+        /// Opens a non-blocking asynchronous overlapped reader on the specified HID interface endpoint.
+        /// </summary>
+        public HidOverlappedReader OpenOverlappedReader(HidDeviceInfo iface, int bufferLength = 0, byte initialReportId = 0)
+        {
+            if (iface == null || string.IsNullOrEmpty(iface.DevicePath)) return null;
+            SafeFileHandle handle = OpenDevice(iface.DevicePath, Win32HidNative.GENERIC_READ, true);
+            if (handle.IsInvalid) return null;
+            return new HidOverlappedReader(iface, handle, bufferLength, initialReportId);
         }
 
         // ═══════════════════════════════════════════════════════════════════════

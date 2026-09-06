@@ -50,8 +50,8 @@ namespace OmniHid.Core.Protocols
                 }
             }
 
-            // 2. Inform user that custom telemetry probe or dump is required
-            return BatteryTelemetry.Offline("Connected (telemetry requires custom protocol; use 'omni-hid dump' to capture)");
+            // 2. Inform caller that proprietary vendor protocol is required
+            return BatteryTelemetry.Offline("Connected (telemetry requires proprietary vendor protocol)");
         }
     }
 }

@@ -242,7 +242,7 @@ Explore detailed documentation in the [`docs/`](docs/) directory:
 - 📖 [**Getting Started**](docs/getting-started.md) — System requirements, build targets, first run.
 - 💻 [**Developer Guide**](docs/developer-guide.md) — C# library integration, lifecycle, UI thread dispatching (WPF/WinForms), system tray sample.
 - 📚 [**API Reference**](docs/api-reference.md) — Public types: `IOmniManager`, `IOmniDevice`, `BatteryTelemetry`, `IHidTransport`, etc.
-- ⚙️ [**CLI Reference**](docs/cli-reference.md) — Full manual for all 8 `omni-hid` subcommands and diagnostic tools.
+- ⚙️ [**CLI Reference**](docs/cli-reference.md) — Full manual for all 9 `omni-hid` subcommands and diagnostic tools.
 - 📄 [**Device Profiles & Hot Reload**](docs/device-profiles.md) — JSON profile schema, hot reload directories, and dual-mode configuration.
 - 🔬 [**Protocol Development**](docs/protocol-development.md) — Reverse-engineering wire formats and implementing `IProtocolHandler`.
 - 🏛️ [**Architecture & Internals**](docs/architecture.md) — Win32 P/Invoke subsystem, multi-interface aggregation, and zero-allocation snapshot design.

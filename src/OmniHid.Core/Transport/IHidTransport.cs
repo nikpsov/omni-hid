@@ -78,8 +78,24 @@ namespace OmniHid.Core.Transport
         /// <param name="readPath">Device path to receive response from.</param>
         /// <param name="response">Response buffer to receive incoming report bytes.</param>
         /// <param name="timeoutMs">Maximum milliseconds to wait for the device response.</param>
-        /// <param name="expectedReportId">Optional expected Report ID to filter incoming stream packets (e.g., discarding mouse motion packets).</param>
         /// <returns><c>true</c> if request was sent and matching response received within timeout; otherwise, <c>false</c>.</returns>
         bool Exchange(string writePath, byte[] request, string readPath, byte[] response, int timeoutMs, byte expectedReportId = 0);
+
+        /// <summary>
+        /// Sends a command report to the target device, attempting <see cref="SetFeatureReport"/> first with fallback to <see cref="WriteOutputReport"/>.
+        /// </summary>
+        /// <param name="devicePath">Win32 device path to open.</param>
+        /// <param name="buffer">Byte buffer containing the report starting with Report ID.</param>
+        /// <returns><c>true</c> if report was successfully transmitted; otherwise, <c>false</c>.</returns>
+        bool SendReport(string devicePath, byte[] buffer);
+
+        /// <summary>
+        /// Opens a non-blocking asynchronous overlapped reader on the specified HID interface endpoint.
+        /// </summary>
+        /// <param name="iface">Target HID interface descriptor.</param>
+        /// <param name="bufferLength">Report buffer byte capacity (or 0 for automatic length).</param>
+        /// <param name="initialReportId">Optional initial Report ID byte.</param>
+        /// <returns>A new <see cref="OmniHid.Core.Transport.Win32.HidOverlappedReader"/>, or null if open failed.</returns>
+        OmniHid.Core.Transport.Win32.HidOverlappedReader OpenOverlappedReader(HidDeviceInfo iface, int bufferLength = 0, byte initialReportId = 0);
     }
 }

@@ -5,7 +5,13 @@
     "0x02EA",
     "0x02D1",
     "0x02E3",
-    "0x0291"
+    "0x0291",
+    "0x02DD",
+    "0x02E0",
+    "0x02FD",
+    "0x028E",
+    "0x028F",
+    "0x0719"
   ],
   "category": "Gamepad",
   "protocol": "xbox-controller",

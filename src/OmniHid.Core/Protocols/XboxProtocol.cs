@@ -75,7 +75,9 @@ namespace OmniHid.Core.Protocols
                         // Wired USB connection
                         if (batt.BatteryType == Win32XInputNative.BATTERY_TYPE_WIRED)
                         {
-                            return BatteryTelemetry.Online(100, BatteryState.Charging, 0, "Wired (USB)");
+                            var wiredTel = BatteryTelemetry.Online(100, BatteryState.Full, 0, "Wired (USB)");
+                            wiredTel.IsWired = true;
+                            return wiredTel;
                         }
 
                         // Wireless connection with known battery chemistry

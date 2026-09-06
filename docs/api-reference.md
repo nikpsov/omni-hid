@@ -25,9 +25,13 @@ This document provides detailed API specifications for the public types in `Omni
 - [Namespace: OmniHid.Core.Transport](#namespace-omnihidcoretransport)
   - [IHidTransport](#ihidtransport)
   - [HidDeviceInfo](#hiddeviceinfo)
+  - [HidOverlappedReader](#hidoverlappedreader)
 - [Namespace: OmniHid.Core.Diagnostics](#namespace-omnihidcorediagnostics)
   - [IcFingerprinter](#icfingerprinter)
   - [IcFingerprintResult](#icfingerprintresult)
+  - [BatteryHunter](#batteryhunter)
+  - [CalibrationEngine](#calibrationengine)
+  - [SpecificationExporter](#specificationexporter)
 
 ---
 
@@ -261,6 +265,8 @@ public interface IHidTransport : IDisposable
 | `WriteOutputReport(string devicePath, byte[] buffer)` | `bool` | Writes an Output Report using `HidD_SetOutputReport` or `WriteFile`. |
 | `ReadInputReport(string devicePath, byte[] buffer, int timeoutMs)` | `bool` | Reads an Input Report using asynchronous Overlapped I/O. |
 | `GetInputReport(string devicePath, byte reportId, byte[] buffer)` | `bool` | Reads an Input Report synchronously via `HidD_GetInputReport`. |
+| `SendReport(string devicePath, byte[] reportData, bool isFeatureReport = true)` | `bool` | Sends a command report using either SetFeatureReport or WriteOutputReport. |
+| `OpenOverlappedReader(HidDeviceInfo iface, SafeFileHandle handle, int index = 0, int bufferLength = 0)` | `HidOverlappedReader` | Creates an active overlapped reader for asynchronous non-blocking packet reception. |
 | `GetPnpBatteryLevel(string devicePath)` | `int` | Reads Windows 10/11 PnP property `DEVPKEY_Device_BatteryLevel` (returns 0..100 or -1). |
 | `Exchange(string writePath, byte[] request, string readPath, byte[] response, int timeoutMs, byte expectedReportId = 0)` | `bool` | Executes atomic Write-then-Read sequence with overlapped I/O and optional Report ID filtering. |
 
@@ -290,6 +296,38 @@ public class HidDeviceInfo
 
 ---
 
+### `HidOverlappedReader`
+
+Encapsulates an active non-blocking asynchronous Win32 Overlapped Read operation on a HID interface endpoint. Provides reusable streaming, event-driven signaling, and memory-safe unmanaged resource disposal.
+
+```csharp
+public class HidOverlappedReader : IDisposable
+```
+
+#### Properties
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `Interface` | `HidDeviceInfo` | The target HID interface descriptor. |
+| `Handle` | `SafeFileHandle` | Active file handle opened for overlapped read access. |
+| `Buffer` | `byte[]` | Buffer storing received report bytes. |
+| `InterfaceIndex` | `int` | Optional 1-based display index of this interface collection. |
+| `LastBuffer` | `byte[]` | Optional buffer retaining previous frame data for differential analysis. |
+| `WaitEvent` | `ManualResetEvent` | Wait handle signaled when an asynchronous read operation completes. |
+| `IsPending` | `bool` | Gets a value indicating whether an asynchronous I/O operation is currently pending. |
+| `IsCompleted` | `bool` | Gets a value indicating whether the read completed synchronously. |
+
+#### Methods
+
+| Method | Return Type | Description |
+| :--- | :--- | :--- |
+| `StartRead()` | `bool` | Initiates an asynchronous overlapped `ReadFile` on this endpoint. |
+| `CompleteRead(out uint bytesTransferred)` | `bool` | Retrieves the transferred byte count without blocking. |
+| `CancelPendingRead()` | `void` | Cancels any currently pending asynchronous read via `CancelIoEx`. |
+| `Dispose()` | `void` | Safely cancels pending I/O and releases unmanaged native overlapped structures. |
+
+---
+
 ## Namespace: OmniHid.Core.Diagnostics
 
 ### `IcFingerprinter`
@@ -314,5 +352,59 @@ public class IcFingerprintResult
     public string RecommendedApproach { get; set; }
     public string MatchedProtocolId { get; set; }
     public bool IsNonBatteryDevice { get; set; }
+}
+```
+
+---
+
+### `BatteryHunter`
+
+Automated reverse-engineering probe engine. Sweeps Feature Report IDs `0x00`..`0xFF` and known query sequences on vendor endpoints, applies heuristic scoring, and isolates candidate battery percentage bytes.
+
+```csharp
+public static class BatteryHunter
+{
+    public static BatteryHunterResult Hunt(IHidTransport transport, List<HidDeviceInfo> interfaces, Action<string> logger = null);
+}
+```
+
+#### `BatteryHunterResult`
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `ReportsProbed` | `int` | Total number of report permutations probed. |
+| `ReportsReceived` | `int` | Number of non-zero report responses received. |
+| `Candidates` | `List<BatteryCandidate>` | Ranked list of candidate battery byte offsets with heuristic scores. |
+
+---
+
+### `CalibrationEngine`
+
+Differential A-B calibration engine. Captures complete report matrices in discharging (State A) and charging (State B) modes, then performs byte-by-byte delta analysis to isolate charging flag toggles and battery percentage changes.
+
+```csharp
+public static class CalibrationEngine
+{
+    public static CalibrationSnapshot CaptureSnapshot(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile = null);
+    public static CalibrationResult AnalyzeDiff(CalibrationSnapshot snapA, CalibrationSnapshot snapB);
+}
+```
+
+---
+
+### `SpecificationExporter`
+
+Compiles comprehensive reverse-engineering hardware specifications, endpoint topologies, and report byte dumps into an AI-ready Markdown document (`device_spec_<VID>_<PID>.md`).
+
+```csharp
+public static class SpecificationExporter
+{
+    public static void ExportMarkdownSpecification(
+        IHidTransport transport,
+        string devName,
+        ushort vid,
+        ushort pid,
+        List<HidDeviceInfo> interfaces,
+        string outputFilePath);
 }
 ```

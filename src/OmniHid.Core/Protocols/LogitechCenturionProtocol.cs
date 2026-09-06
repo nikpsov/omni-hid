@@ -104,51 +104,45 @@ namespace OmniHid.Core.Protocols
             }
             if (targetDev == null) targetDev = interfaces[0];
 
-            return ExecuteCenturionQuery(targetDev.DevicePath);
+            return ExecuteCenturionQuery(targetDev);
         }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Centurion Pipeline Execution
         // ═══════════════════════════════════════════════════════════════════════
 
-        private static BatteryTelemetry ExecuteCenturionQuery(string devicePath)
+        private static BatteryTelemetry ExecuteCenturionQuery(HidDeviceInfo dev)
         {
-            using (SafeFileHandle hDev = Win32HidNative.CreateFile(
-                devicePath,
-                Win32HidNative.GENERIC_READ | Win32HidNative.GENERIC_WRITE,
-                Win32HidNative.FILE_SHARE_READ | Win32HidNative.FILE_SHARE_WRITE,
-                IntPtr.Zero,
-                Win32HidNative.OPEN_EXISTING,
-                Win32HidNative.FILE_FLAG_OVERLAPPED,
-                IntPtr.Zero))
+            SafeFileHandle hDev = Win32HidTransport.OpenDevice(dev.DevicePath, Win32HidNative.GENERIC_READ | Win32HidNative.GENERIC_WRITE, true);
+            if (hDev.IsInvalid)
             {
-                if (hDev.IsInvalid)
-                {
-                    return BatteryTelemetry.Offline("Cannot open headset handle");
-                }
+                return BatteryTelemetry.Offline("Cannot open headset handle");
+            }
 
+            using (HidOverlappedReader reader = new HidOverlappedReader(dev, hDev, FRAME_SIZE))
+            {
                 CenturionDiscoveryInfo info;
                 lock (_cachedInfo)
                 {
                     if (_cachedInfo.Count > 32) _cachedInfo.Clear();
-                    if (!_cachedInfo.TryGetValue(devicePath, out info))
+                    if (!_cachedInfo.TryGetValue(dev.DevicePath, out info))
                     {
                         info = new CenturionDiscoveryInfo();
-                        _cachedInfo[devicePath] = info;
+                        _cachedInfo[dev.DevicePath] = info;
                     }
                 }
 
                 // Discover bridge & battery feature indices if not cached
                 if (!info.Discovered)
                 {
-                    if (!DiscoverCenturionFeatures(hDev, info))
+                    if (!DiscoverCenturionFeatures(reader, info))
                     {
                         return BatteryTelemetry.Offline("Headset offline or turned off");
                     }
                 }
 
                 // Query Battery SoC via bridge
-                byte[] reply = SendBridgeRequest(hDev, info.BridgeIndex, info.BatterySubFeatureIndex, 0x00, null);
+                byte[] reply = SendBridgeRequest(reader, info.BridgeIndex, info.BatterySubFeatureIndex, 0x00, null);
                 if (reply == null || reply.Length < 1)
                 {
                     info.Discovered = false;
@@ -171,10 +165,10 @@ namespace OmniHid.Core.Protocols
         /// <summary>
         /// Navigates the Centurion feature tree to locate bridge and battery feature indices.
         /// </summary>
-        private static bool DiscoverCenturionFeatures(SafeFileHandle hDev, CenturionDiscoveryInfo info)
+        private static bool DiscoverCenturionFeatures(HidOverlappedReader reader, CenturionDiscoveryInfo info)
         {
             // 1. Root -> FeatureSet (0x0001)
-            byte[] fsReply = SendDirectRequest(hDev, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
+            byte[] fsReply = SendDirectRequest(reader, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
             if (fsReply == null || fsReply.Length == 0 || fsReply[0] == 0)
             {
                 return false;
@@ -182,7 +176,7 @@ namespace OmniHid.Core.Protocols
             byte featureSetIndex = fsReply[0];
 
             // 2. Query feature count from featureSetIndex
-            byte[] countReply = SendDirectRequest(hDev, featureSetIndex, 0x00, null);
+            byte[] countReply = SendDirectRequest(reader, featureSetIndex, 0x00, null);
             if (countReply == null || countReply.Length == 0)
             {
                 return false;
@@ -193,7 +187,7 @@ namespace OmniHid.Core.Protocols
             byte bridgeIndex = 0xFF;
             for (byte i = 0; i < featureCount; i++)
             {
-                byte[] itemReply = SendDirectRequest(hDev, featureSetIndex, 0x10, new byte[] { i });
+                byte[] itemReply = SendDirectRequest(reader, featureSetIndex, 0x10, new byte[] { i });
                 if (itemReply != null && itemReply.Length >= 3)
                 {
                     ushort featId = (ushort)((itemReply[1] << 8) | itemReply[2]);
@@ -209,7 +203,7 @@ namespace OmniHid.Core.Protocols
             info.BridgeIndex = bridgeIndex;
 
             // 4. Discover sub-device FeatureSet over bridge
-            byte[] subFsReply = SendBridgeRequest(hDev, bridgeIndex, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
+            byte[] subFsReply = SendBridgeRequest(reader, bridgeIndex, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
             if (subFsReply == null || subFsReply.Length == 0 || subFsReply[0] == 0)
             {
                 return false;
@@ -217,7 +211,7 @@ namespace OmniHid.Core.Protocols
             byte subFeatureSetIndex = subFsReply[0];
 
             // 5. Query sub-feature count
-            byte[] subCountReply = SendBridgeRequest(hDev, bridgeIndex, subFeatureSetIndex, 0x00, null);
+            byte[] subCountReply = SendBridgeRequest(reader, bridgeIndex, subFeatureSetIndex, 0x00, null);
             if (subCountReply == null || subCountReply.Length == 0)
             {
                 return false;
@@ -228,7 +222,7 @@ namespace OmniHid.Core.Protocols
             byte batteryIndex = 0xFF;
             for (byte i = 0; i < subFeatureCount; i++)
             {
-                byte[] itemReply = SendBridgeRequest(hDev, bridgeIndex, subFeatureSetIndex, 0x10, new byte[] { i });
+                byte[] itemReply = SendBridgeRequest(reader, bridgeIndex, subFeatureSetIndex, 0x10, new byte[] { i });
                 if (itemReply != null && itemReply.Length >= 3)
                 {
                     ushort featId = (ushort)((itemReply[1] << 8) | itemReply[2]);
@@ -250,7 +244,7 @@ namespace OmniHid.Core.Protocols
         // Frame Transmission & Reception
         // ═══════════════════════════════════════════════════════════════════════
 
-        private static byte[] SendDirectRequest(SafeFileHandle hDev, byte featureIndex, byte function, byte[] parameters)
+        private static byte[] SendDirectRequest(HidOverlappedReader reader, byte featureIndex, byte function, byte[] parameters)
         {
             int paramLen = parameters != null ? parameters.Length : 0;
             byte[] payload = new byte[2 + paramLen];
@@ -259,11 +253,11 @@ namespace OmniHid.Core.Protocols
             if (paramLen > 0) Array.Copy(parameters, 0, payload, 2, paramLen);
 
             byte[] frame = BuildCenturionFrame(payload);
-            if (!WriteFrame(hDev, frame)) return null;
+            if (!WriteFrame(reader.Handle, frame)) return null;
 
             for (int attempt = 0; attempt < 8; attempt++)
             {
-                byte[] resp = ReadFrame(hDev, 150);
+                byte[] resp = ReadFrame(reader, 150);
                 if (resp == null) continue;
 
                 byte[] reply = ExtractPayload(resp);
@@ -278,7 +272,7 @@ namespace OmniHid.Core.Protocols
             return null;
         }
 
-        private static byte[] SendBridgeRequest(SafeFileHandle hDev, byte bridgeIndex, byte subFeatureIndex, byte function, byte[] parameters)
+        private static byte[] SendBridgeRequest(HidOverlappedReader reader, byte bridgeIndex, byte subFeatureIndex, byte function, byte[] parameters)
         {
             int paramLen = parameters != null ? parameters.Length : 0;
             byte[] subMsg = new byte[3 + paramLen];
@@ -295,11 +289,11 @@ namespace OmniHid.Core.Protocols
             Array.Copy(subMsg, 0, layer3, 4, subMsg.Length);
 
             byte[] frame = BuildCenturionFrame(layer3);
-            if (!WriteFrame(hDev, frame)) return null;
+            if (!WriteFrame(reader.Handle, frame)) return null;
 
             for (int attempt = 0; attempt < 8; attempt++)
             {
-                byte[] resp = ReadFrame(hDev, 250);
+                byte[] resp = ReadFrame(reader, 250);
                 if (resp == null) continue;
 
                 byte[] reply = ExtractPayload(resp);
@@ -362,49 +356,21 @@ namespace OmniHid.Core.Protocols
             return ok;
         }
 
-        private static byte[] ReadFrame(SafeFileHandle hDev, int timeoutMs)
+        private static byte[] ReadFrame(HidOverlappedReader reader, int timeoutMs)
         {
-            byte[] buf = new byte[FRAME_SIZE];
-            using (ManualResetEvent evt = new ManualResetEvent(false))
+            if (!reader.StartRead()) return null;
+            if (reader.WaitEvent.WaitOne(timeoutMs))
             {
-                NativeOverlapped ov = new NativeOverlapped { EventHandle = evt.SafeWaitHandle.DangerousGetHandle() };
-                IntPtr pOverlapped = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeOverlapped)));
-                bool pendingIo = false;
-                try
+                uint bytesRead;
+                if (reader.CompleteRead(out bytesRead))
                 {
-                    Marshal.StructureToPtr(ov, pOverlapped, false);
-                    uint bytesRead;
-                    bool ok = Win32HidNative.ReadFile(hDev, buf, (uint)buf.Length, out bytesRead, pOverlapped);
-                    if (!ok)
-                    {
-                        int err = Marshal.GetLastWin32Error();
-                        if (err == Win32HidNative.ERROR_IO_PENDING)
-                        {
-                            pendingIo = true;
-                            if (evt.WaitOne(timeoutMs))
-                            {
-                                if (Win32HidNative.GetOverlappedResult(hDev, pOverlapped, out bytesRead, false))
-                                {
-                                    pendingIo = false;
-                                    return buf;
-                                }
-                            }
-                        }
-                        return null;
-                    }
-                    return buf;
-                }
-                finally
-                {
-                    if (pendingIo)
-                    {
-                        uint bytesRead;
-                        Win32HidNative.CancelIoEx(hDev, pOverlapped);
-                        Win32HidNative.GetOverlappedResult(hDev, pOverlapped, out bytesRead, true);
-                    }
-                    Marshal.FreeHGlobal(pOverlapped);
+                    byte[] copy = new byte[reader.Buffer.Length];
+                    Array.Copy(reader.Buffer, copy, copy.Length);
+                    return copy;
                 }
             }
+            reader.CancelPendingRead();
+            return null;
         }
     }
 }
