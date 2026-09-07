@@ -84,6 +84,7 @@ namespace OmniHid.Core
         private volatile bool _needsFullScan = true;
         private List<HidDeviceInfo> _cachedHidList;
         private int _pollCountSinceFullScan;
+        private readonly bool[] _knownSlotConnected = new bool[4];
 
         /// <summary>
         /// Temporary grouping container used during bus reconciliation to aggregate multiple HID interfaces.
@@ -276,21 +277,37 @@ namespace OmniHid.Core
 
             try
             {
-                List<HidDeviceInfo> allHid;
-                lock (_lock)
+                // Fast-path: if no hardware PnP changes occurred, refresh telemetry directly on existing devices
+                // without enumerating bus descriptors or allocating reconciliation dictionaries.
+                if (!_needsFullScan && _cachedHidList != null && ++_pollCountSinceFullScan < 16)
                 {
-                    if (_needsFullScan || _cachedHidList == null || ++_pollCountSinceFullScan >= 8)
+                    bool xinputChanged = false;
+                    if (Win32XInputNative.IsAvailable)
                     {
-                        allHid = _transport.Enumerate();
-                        _cachedHidList = allHid;
-                        _needsFullScan = false;
-                        _pollCountSinceFullScan = 0;
+                        for (int slot = 0; slot < 4; slot++)
+                        {
+                            Win32XInputNative.XINPUT_BATTERY_INFORMATION xBatt;
+                            int battRes = Win32XInputNative.GetBatteryInformation(slot, Win32XInputNative.BATTERY_DEVTYPE_GAMEPAD, out xBatt);
+                            bool isConnected = (battRes == Win32XInputNative.ERROR_SUCCESS && xBatt.BatteryType != Win32XInputNative.BATTERY_TYPE_DISCONNECTED);
+                            if (isConnected != _knownSlotConnected[slot])
+                            {
+                                _knownSlotConnected[slot] = isConnected;
+                                xinputChanged = true;
+                            }
+                        }
                     }
-                    else
+
+                    if (!xinputChanged)
                     {
-                        allHid = _cachedHidList;
+                        FastRefreshTelemetry();
+                        return;
                     }
                 }
+
+                _pollCountSinceFullScan = 0;
+                List<HidDeviceInfo> allHid = _transport.Enumerate();
+                _cachedHidList = allHid;
+                _needsFullScan = false;
 
                 // ── Phase 1: Group raw HID interfaces by physical device instance ──────
                 Dictionary<string, List<HidDeviceInfo>> byPhysicalDevice = new Dictionary<string, List<HidDeviceInfo>>(StringComparer.OrdinalIgnoreCase);
@@ -472,8 +489,10 @@ namespace OmniHid.Core
                             Win32XInputNative.XINPUT_BATTERY_INFORMATION xBatt;
                             int battRes = Win32XInputNative.GetBatteryInformation(slot, Win32XInputNative.BATTERY_DEVTYPE_GAMEPAD, out xBatt);
 
-                            if (stateRes == Win32XInputNative.ERROR_SUCCESS ||
-                                (battRes == Win32XInputNative.ERROR_SUCCESS && xBatt.BatteryType != Win32XInputNative.BATTERY_TYPE_DISCONNECTED))
+                            bool isConnected = (stateRes == Win32XInputNative.ERROR_SUCCESS ||
+                                (battRes == Win32XInputNative.ERROR_SUCCESS && xBatt.BatteryType != Win32XInputNative.BATTERY_TYPE_DISCONNECTED));
+                            _knownSlotConnected[slot] = isConnected;
+                            if (isConnected)
                             {
                                 activeSlots[activeSlotCount++] = slot;
                             }
@@ -647,6 +666,49 @@ namespace OmniHid.Core
                 lock (_lock)
                 {
                     _isPolling = false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Performs a zero-allocation telemetry refresh directly across existing active devices,
+        /// bypassing the bus reconciliation pipeline when no PnP changes have occurred.
+        /// </summary>
+        private void FastRefreshTelemetry()
+        {
+            IOmniDevice[] devices = _connectedDevicesSnapshot;
+            if (devices == null || devices.Length == 0) return;
+
+            bool anyTelemetryChanged = false;
+            for (int i = 0; i < devices.Length; i++)
+            {
+                var dev = devices[i] as OmniDevice;
+                if (dev == null) continue;
+
+                var oldTel = dev.Telemetry;
+                int oldLevel = oldTel != null ? oldTel.LevelPercent : -1;
+                BatteryState oldState = oldTel != null ? oldTel.State : BatteryState.Unavailable;
+                bool oldWired = dev.IsWired;
+                bool oldConnected = dev.IsConnected;
+
+                var newTel = dev.RefreshTelemetry();
+
+                if (dev.IsConnected != oldConnected ||
+                    dev.IsWired != oldWired ||
+                    (newTel != null && (newTel.LevelPercent != oldLevel || newTel.State != oldState)))
+                {
+                    anyTelemetryChanged = true;
+                    Action<IOmniDevice, BatteryTelemetry> telHandler = TelemetryUpdated;
+                    if (telHandler != null) telHandler(dev, newTel);
+                }
+            }
+
+            if (anyTelemetryChanged)
+            {
+                Action<IReadOnlyList<IOmniDevice>> batchHandler = DevicesUpdated;
+                if (batchHandler != null)
+                {
+                    batchHandler(_connectedDevicesSnapshot);
                 }
             }
         }

@@ -74,6 +74,7 @@ namespace OmniHid.Core.Devices
         private readonly IHidTransport _transport;
         private readonly List<HidDeviceInfo> _interfaces;
         private volatile HidDeviceInfo[] _cachedInterfacesSnapshot;
+        private volatile List<HidDeviceInfo> _cachedInterfacesList;
 
         // ═══════════════════════════════════════════════════════════════════════
         // Constructors
@@ -89,6 +90,7 @@ namespace OmniHid.Core.Devices
             _transport = transport;
             _interfaces = interfaces != null ? new List<HidDeviceInfo>(interfaces) : new List<HidDeviceInfo>();
             _cachedInterfacesSnapshot = _interfaces.ToArray();
+            _cachedInterfacesList = new List<HidDeviceInfo>(_interfaces);
 
             VendorId = profile.VendorId;
             ProductId = _interfaces.Count > 0 ? _interfaces[0].ProductId : (profile.ProductIds != null && profile.ProductIds.Length > 0 ? profile.ProductIds[0] : (ushort)0);
@@ -132,6 +134,7 @@ namespace OmniHid.Core.Devices
                     IsConnected = false;
                 }
                 _cachedInterfacesSnapshot = _interfaces.ToArray();
+                _cachedInterfacesList = new List<HidDeviceInfo>(_interfaces);
             }
         }
 
@@ -141,11 +144,7 @@ namespace OmniHid.Core.Devices
         /// </summary>
         public BatteryTelemetry RefreshTelemetry()
         {
-            List<HidDeviceInfo> currentInterfaces;
-            lock (_lock)
-            {
-                currentInterfaces = new List<HidDeviceInfo>(_interfaces);
-            }
+            List<HidDeviceInfo> currentInterfaces = _cachedInterfacesList;
 
             bool canRunWithoutHid = _protocol != null && _protocol.CanQueryWithoutHidInterfaces;
             if (currentInterfaces.Count == 0 && !canRunWithoutHid)
