@@ -116,7 +116,7 @@ namespace OmniHid.Cli.Commands
             Console.ResetColor();
 
             using (var transport = new Win32HidTransport())
-            using (var manager = new OmniManager(transport))
+            using (var manager = new OmniManager(transport, enableInternalWatcher: false))
             {
                 var allDevices = manager.ScanDevices();
                 var targets = new List<IOmniDevice>();

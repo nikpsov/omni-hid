@@ -1,6 +1,6 @@
 ; OmniHID Inno Setup Script
 #ifndef MyAppVersion
-  #define MyAppVersion "0.0.5"
+  #define MyAppVersion "0.1.0"
 #endif
 
 #define MyAppName "OmniHID"

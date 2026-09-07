@@ -44,7 +44,7 @@ namespace OmniHid.Cli.Commands
             Console.WriteLine();
 
             using (var transport = new Win32HidTransport())
-            using (var manager = new OmniManager(transport))
+            using (var manager = new OmniManager(transport, enableInternalWatcher: false))
             {
                 manager.RegisteredOnly = registeredOnly;
                 manager.DeduplicateWiredWireless = !showAll;
@@ -161,6 +161,7 @@ namespace OmniHid.Cli.Commands
                     if (hasBatteryPage) hints.Append("Battery 0x85 ");
                     if (hasPowerPage) hints.Append("Power 0x84 ");
                     if (pnpBattLevel >= 0) hints.AppendFormat("PnP:{0}% ", pnpBattLevel);
+                    if (dev.AssignedSlot >= 0) hints.AppendFormat("Slot:{0} ", dev.AssignedSlot + 1);
 
                     Console.Write("{0,-12} {1,-32} {2,-12} ", catStr, devName, vidPid);
 

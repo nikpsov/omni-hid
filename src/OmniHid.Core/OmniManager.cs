@@ -77,14 +77,110 @@ namespace OmniHid.Core
         private readonly HashSet<string> _seenDeviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<OmniDevice> _toRemove = new List<OmniDevice>();
 
+        // Reusable collections to eliminate heap allocations during scan cycles
+        private readonly Dictionary<string, List<HidDeviceInfo>> _byPhysicalDevice = new Dictionary<string, List<HidDeviceInfo>>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<List<HidDeviceInfo>> _ifaceListPool = new List<List<HidDeviceInfo>>();
+        private int _ifaceListPoolIndex = 0;
+        private readonly Dictionary<string, LogicalDeviceGroup> _logicalGroups = new Dictionary<string, LogicalDeviceGroup>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<LogicalDeviceGroup> _groupPool = new List<LogicalDeviceGroup>();
+        private int _groupPoolIndex = 0;
+        private readonly List<OmniDevice> _newDevices = new List<OmniDevice>();
+        private readonly List<KeyValuePair<IOmniDevice, BatteryTelemetry>> _updatedTelemetry = new List<KeyValuePair<IOmniDevice, BatteryTelemetry>>();
+        private readonly List<string> _keysToSuppress = new List<string>();
+        private readonly HashSet<string> _activeWiredModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         private Timer _pollTimer;
         private Timer _debounceTimer;
         private Win32DeviceWatcher _watcher;
+        private bool _enableInternalWatcher = true;
         private bool _isPolling;
         private volatile bool _needsFullScan = true;
         private List<HidDeviceInfo> _cachedHidList;
         private int _pollCountSinceFullScan;
         private readonly bool[] _knownSlotConnected = new bool[4];
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the internal Win32DeviceWatcher background thread is enabled.
+        /// When false (e.g. in GUI applications that already have a message pump intercepting WM_DEVICECHANGE),
+        /// the background thread and message window are not created, and the host can call <see cref="ProcessDeviceChangeNotification"/>.
+        /// </summary>
+        public bool EnableInternalDeviceWatcher
+        {
+            get { return _enableInternalWatcher; }
+            set
+            {
+                if (_enableInternalWatcher == value) return;
+                _enableInternalWatcher = value;
+                if (!_enableInternalWatcher)
+                {
+                    if (_watcher != null)
+                    {
+                        _watcher.DeviceChanged -= OnUsbDeviceChanged;
+                        _watcher.Dispose();
+                        _watcher = null;
+                    }
+                }
+                else
+                {
+                    if (_watcher == null)
+                    {
+                        try
+                        {
+                            _watcher = new Win32DeviceWatcher();
+                            _watcher.DeviceChanged += OnUsbDeviceChanged;
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Allows host applications with their own Win32 message loop to notify OmniManager of hardware arrival/removal
+        /// without spinning up a redundant background watcher thread.
+        /// </summary>
+        public void ProcessDeviceChangeNotification()
+        {
+            OnUsbDeviceChanged();
+        }
+
+        private List<HidDeviceInfo> GetPooledInterfaceList()
+        {
+            if (_ifaceListPoolIndex < _ifaceListPool.Count)
+            {
+                var list = _ifaceListPool[_ifaceListPoolIndex++];
+                list.Clear();
+                return list;
+            }
+            var newList = new List<HidDeviceInfo>();
+            _ifaceListPool.Add(newList);
+            _ifaceListPoolIndex++;
+            return newList;
+        }
+
+        private LogicalDeviceGroup GetPooledGroup(string deviceId, DeviceProfile profile, IProtocolHandler protocol, List<HidDeviceInfo> interfaces)
+        {
+            LogicalDeviceGroup group;
+            if (_groupPoolIndex < _groupPool.Count)
+            {
+                group = _groupPool[_groupPoolIndex++];
+                group.DeviceId = deviceId;
+                group.Profile = profile;
+                group.Protocol = protocol;
+                group.Interfaces = interfaces;
+                return group;
+            }
+            group = new LogicalDeviceGroup
+            {
+                DeviceId = deviceId,
+                Profile = profile,
+                Protocol = protocol,
+                Interfaces = interfaces
+            };
+            _groupPool.Add(group);
+            _groupPoolIndex++;
+            return group;
+        }
 
         /// <summary>
         /// Temporary grouping container used during bus reconciliation to aggregate multiple HID interfaces.
@@ -105,11 +201,15 @@ namespace OmniHid.Core
         /// Initializes a new instance of the <see cref="OmniManager"/> class with custom or default transport and registry.
         /// Registers all built-in hardware protocol drivers and starts the device change watcher.
         /// </summary>
-        public OmniManager(IHidTransport transport = null, DeviceRegistry registry = null)
+        /// <param name="transport">Optional transport implementation.</param>
+        /// <param name="registry">Optional peripheral catalog registry.</param>
+        /// <param name="enableInternalWatcher">True to launch internal message loop thread; false if host forwards WM_DEVICECHANGE.</param>
+        public OmniManager(IHidTransport transport = null, DeviceRegistry registry = null, bool enableInternalWatcher = true)
         {
             _transport = transport ?? new Win32HidTransport();
             _ownsRegistry = (registry == null);
             _registry = registry ?? new DeviceRegistry();
+            _enableInternalWatcher = enableInternalWatcher;
 
             // Register standard protocol drivers
             RegisterProtocol(new RoyuanProtocol(), "royuan-keyboard", "akko", "akko-keyboard", "yichip");
@@ -130,14 +230,17 @@ namespace OmniHid.Core
             _pollTimer = new Timer(OnPollTimer, null, Timeout.Infinite, Timeout.Infinite);
             _debounceTimer = new Timer(OnDebounceTimer, null, Timeout.Infinite, Timeout.Infinite);
 
-            try
+            if (_enableInternalWatcher)
             {
-                _watcher = new Win32DeviceWatcher();
-                _watcher.DeviceChanged += OnUsbDeviceChanged;
-            }
-            catch
-            {
-                // Fallback to polling if message-only window creation fails in headless / non-GUI service
+                try
+                {
+                    _watcher = new Win32DeviceWatcher();
+                    _watcher.DeviceChanged += OnUsbDeviceChanged;
+                }
+                catch
+                {
+                    // Fallback to polling if message-only window creation fails in headless / non-GUI service
+                }
             }
 
             _registry.ProfilesReloaded += OnProfilesReloaded;
@@ -204,14 +307,29 @@ namespace OmniHid.Core
         }
 
         /// <summary>
-        /// Reloads device profiles from embedded resources and external filesystem locations,
-        /// and triggers an immediate asynchronous bus scan and telemetry refresh.
+        /// Triggers an immediate asynchronous bus scan and telemetry refresh across all devices.
         /// </summary>
         public void ForceRefresh()
         {
             _needsFullScan = true;
-            _registry.Reload();
             ThreadPool.QueueUserWorkItem(state => ScanAndUpdate());
+        }
+
+        /// <summary>
+        /// Triggers an immediate asynchronous telemetry refresh pass across existing devices without full bus re-enumeration.
+        /// </summary>
+        public void RefreshTelemetry()
+        {
+            ThreadPool.QueueUserWorkItem(state => ScanAndUpdate());
+        }
+
+        /// <summary>
+        /// Reloads device profiles from embedded resources and external filesystem locations,
+        /// and triggers an immediate asynchronous bus scan and telemetry refresh.
+        /// </summary>
+        public void ReloadProfiles()
+        {
+            _registry.Reload();
         }
 
         /// <summary>
@@ -309,24 +427,31 @@ namespace OmniHid.Core
                 _cachedHidList = allHid;
                 _needsFullScan = false;
 
+                // Reset pooled collections for zero-allocation bus scan pass
+                _ifaceListPoolIndex = 0;
+                _groupPoolIndex = 0;
+                _byPhysicalDevice.Clear();
+                _logicalGroups.Clear();
+                _newDevices.Clear();
+                _updatedTelemetry.Clear();
+                _keysToSuppress.Clear();
+                _activeWiredModels.Clear();
+
                 // ── Phase 1: Group raw HID interfaces by physical device instance ──────
-                Dictionary<string, List<HidDeviceInfo>> byPhysicalDevice = new Dictionary<string, List<HidDeviceInfo>>(StringComparer.OrdinalIgnoreCase);
                 foreach (var dev in allHid)
                 {
                     string physId = ExtractPhysicalDeviceId(dev.DevicePath, dev.VendorId, dev.ProductId, dev.UsagePage, dev.Usage, _registry);
                     List<HidDeviceInfo> list;
-                    if (!byPhysicalDevice.TryGetValue(physId, out list))
+                    if (!_byPhysicalDevice.TryGetValue(physId, out list))
                     {
-                        list = new List<HidDeviceInfo>();
-                        byPhysicalDevice[physId] = list;
+                        list = GetPooledInterfaceList();
+                        _byPhysicalDevice[physId] = list;
                     }
                     list.Add(dev);
                 }
 
                 // ── Phase 2: Consolidate into Logical Physical Devices ─────────
-                Dictionary<string, LogicalDeviceGroup> logicalGroups = new Dictionary<string, LogicalDeviceGroup>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var kvp in byPhysicalDevice)
+                foreach (var kvp in _byPhysicalDevice)
                 {
                     string physId = kvp.Key;
                     var devList = kvp.Value;
@@ -359,8 +484,8 @@ namespace OmniHid.Core
                         }
                     }
 
-                    // Clone profile so each physical device instance maintains its own runtime state (e.g. AssignedSlot)
-                    DeviceProfile instanceProfile = profile.Clone();
+                    // Zero-allocation: use profile directly without cloning
+                    DeviceProfile instanceProfile = profile;
 
                     // Extract instance tag for deterministic, collision-free DeviceId
                     string instanceTag = physId.IndexOf('#') >= 0
@@ -372,17 +497,11 @@ namespace OmniHid.Core
                     string deviceId = string.Format("{0:X4}:{1:X4}:{2}:{3}",
                         vid, pid, instanceTag, instanceProfile.ProtocolId);
 
-                    logicalGroups[physId] = new LogicalDeviceGroup
-                    {
-                        DeviceId = deviceId,
-                        Profile = instanceProfile,
-                        Protocol = protocol,
-                        Interfaces = devList
-                    };
+                    _logicalGroups[physId] = GetPooledGroup(deviceId, instanceProfile, protocol, devList);
                 }
 
                 // ── Phase 2a: Direct Interface Pinning (TargetUsagePage / TargetUsage) ──
-                foreach (var grp in logicalGroups.Values)
+                foreach (var grp in _logicalGroups.Values)
                 {
                     if (grp.Profile != null && grp.Profile.TargetUsagePage != 0 && grp.Interfaces != null && grp.Interfaces.Count > 1)
                     {
@@ -414,7 +533,7 @@ namespace OmniHid.Core
                     if (_protocols.TryGetValue("xbox-controller", out xboxProtocol))
                     {
                         int hidXboxCount = 0;
-                        foreach (var grp in logicalGroups.Values)
+                        foreach (var grp in _logicalGroups.Values)
                         {
                             if (grp.Profile != null && (grp.Profile.ProtocolId == "xbox-controller" || (grp.Profile.VendorId == 0x045E && grp.Profile.Category == DeviceCategory.Gamepad)))
                             {
@@ -441,7 +560,7 @@ namespace OmniHid.Core
                                 }
 
                                 string logicalKey = string.Format("045E:Xbox_Controller_Slot_{0}:Gamepad:xbox-controller", slot);
-                                if (!logicalGroups.ContainsKey(logicalKey))
+                                if (!_logicalGroups.ContainsKey(logicalKey))
                                 {
                                     DeviceProfile xboxProfile = _registry.FindProfile(0x045E, 0x0B12, "Xbox Wireless Controller", DeviceCategory.Gamepad, !RegisteredOnly);
                                     if (xboxProfile == null)
@@ -468,13 +587,11 @@ namespace OmniHid.Core
 
                                     xboxProfile.AssignedSlot = slot;
 
-                                    logicalGroups[logicalKey] = new LogicalDeviceGroup
-                                    {
-                                        DeviceId = string.Format("045E:Xbox_Controller_{0}:xbox-controller", slot + 1),
-                                        Profile = xboxProfile,
-                                        Protocol = xboxProtocol,
-                                        Interfaces = new List<HidDeviceInfo>()
-                                    };
+                                    _logicalGroups[logicalKey] = GetPooledGroup(
+                                        string.Format("045E:Xbox_Controller_{0}:xbox-controller", slot + 1),
+                                        xboxProfile,
+                                        xboxProtocol,
+                                        GetPooledInterfaceList());
                                 }
                             }
                         }
@@ -499,7 +616,7 @@ namespace OmniHid.Core
                         }
 
                         int slotIdx = 0;
-                        foreach (var grp in logicalGroups.Values)
+                        foreach (var grp in _logicalGroups.Values)
                         {
                             if (grp.Profile != null && (grp.Profile.ProtocolId == "xbox-controller" || (grp.Profile.VendorId == 0x045E && grp.Profile.Category == DeviceCategory.Gamepad)))
                             {
@@ -513,12 +630,10 @@ namespace OmniHid.Core
                 }
 
                 // ── Phase 2d: Deduplicate Wired Cable & Wireless Receiver Pairs ──────
-                if (DeduplicateWiredWireless && logicalGroups.Count > 1)
+                if (DeduplicateWiredWireless && _logicalGroups.Count > 1)
                 {
                     // Identify all peripheral models currently connected via direct USB cable
-                    HashSet<string> activeWiredModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                    foreach (var grp in logicalGroups.Values)
+                    foreach (var grp in _logicalGroups.Values)
                     {
                         if (grp.Profile != null && grp.Interfaces != null && grp.Interfaces.Count > 0)
                         {
@@ -526,16 +641,14 @@ namespace OmniHid.Core
                             if (grp.Profile.IsWiredProductId(pid))
                             {
                                 string modelKey = string.Format("{0:X4}:{1}", grp.Profile.VendorId, grp.Profile.ModelName);
-                                activeWiredModels.Add(modelKey);
+                                _activeWiredModels.Add(modelKey);
                             }
                         }
                     }
 
-                    if (activeWiredModels.Count > 0)
+                    if (_activeWiredModels.Count > 0)
                     {
-                        List<string> keysToSuppress = new List<string>();
-
-                        foreach (var kvp in logicalGroups)
+                        foreach (var kvp in _logicalGroups)
                         {
                             var grp = kvp.Value;
                             if (grp.Profile != null && grp.Interfaces != null && grp.Interfaces.Count > 0)
@@ -545,16 +658,16 @@ namespace OmniHid.Core
                                 string modelKey = string.Format("{0:X4}:{1}", grp.Profile.VendorId, grp.Profile.ModelName);
 
                                 // If this model has an active wired connection, suppress its companion wireless dongle receiver
-                                if (!isWired && activeWiredModels.Contains(modelKey))
+                                if (!isWired && _activeWiredModels.Contains(modelKey))
                                 {
-                                    keysToSuppress.Add(kvp.Key);
+                                    _keysToSuppress.Add(kvp.Key);
                                 }
                             }
                         }
 
-                        for (int i = 0; i < keysToSuppress.Count; i++)
+                        for (int i = 0; i < _keysToSuppress.Count; i++)
                         {
-                            logicalGroups.Remove(keysToSuppress[i]);
+                            _logicalGroups.Remove(_keysToSuppress[i]);
                         }
                     }
                 }
@@ -567,10 +680,7 @@ namespace OmniHid.Core
                     _seenDeviceIds.Clear();
                 }
 
-                List<OmniDevice> newDevices = new List<OmniDevice>();
-                List<KeyValuePair<IOmniDevice, BatteryTelemetry>> updatedTelemetry = new List<KeyValuePair<IOmniDevice, BatteryTelemetry>>();
-
-                foreach (var kvp in logicalGroups)
+                foreach (var kvp in _logicalGroups)
                 {
                     var group = kvp.Value;
                     string deviceId = group.DeviceId;
@@ -582,25 +692,26 @@ namespace OmniHid.Core
                         _seenDeviceIds.Add(deviceId);
                         if (!_activeDevices.TryGetValue(deviceId, out device))
                         {
-                            device = new OmniDevice(deviceId, group.Profile.Clone(), group.Protocol, _transport, group.Interfaces);
+                            device = new OmniDevice(deviceId, group.Profile, group.Protocol, _transport, group.Interfaces);
+                            device.AssignedSlot = group.Profile != null ? group.Profile.AssignedSlot : -1;
                             _activeDevices[deviceId] = device;
                             isNew = true;
                             collectionChanged = true;
                         }
                         else
                         {
-                            device.Profile.AssignedSlot = group.Profile.AssignedSlot;
+                            device.AssignedSlot = group.Profile != null ? group.Profile.AssignedSlot : -1;
                             device.UpdateInterfaces(group.Interfaces);
                         }
                     }
 
                     if (isNew)
                     {
-                        newDevices.Add(device);
+                        _newDevices.Add(device);
                     }
 
                     BatteryTelemetry telemetry = device.RefreshTelemetry();
-                    updatedTelemetry.Add(new KeyValuePair<IOmniDevice, BatteryTelemetry>(device, telemetry));
+                    _updatedTelemetry.Add(new KeyValuePair<IOmniDevice, BatteryTelemetry>(device, telemetry));
                 }
 
                 // ── Phase 4: Clean Up Disconnected Devices ────────────────────
@@ -643,14 +754,15 @@ namespace OmniHid.Core
                     }
                 }
 
-                foreach (var dev in newDevices)
+                for (int i = 0; i < _newDevices.Count; i++)
                 {
                     Action<IOmniDevice> handler = DeviceConnected;
-                    if (handler != null) handler(dev);
+                    if (handler != null) handler(_newDevices[i]);
                 }
 
-                foreach (var pair in updatedTelemetry)
+                for (int i = 0; i < _updatedTelemetry.Count; i++)
                 {
+                    var pair = _updatedTelemetry[i];
                     Action<IOmniDevice, BatteryTelemetry> telHandler = TelemetryUpdated;
                     if (telHandler != null) telHandler(pair.Key, pair.Value);
                 }
@@ -666,6 +778,8 @@ namespace OmniHid.Core
                 lock (_lock)
                 {
                     _isPolling = false;
+                    _newDevices.Clear();
+                    _updatedTelemetry.Clear();
                 }
             }
         }

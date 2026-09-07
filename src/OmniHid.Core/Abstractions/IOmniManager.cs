@@ -55,5 +55,32 @@ namespace OmniHid.Core.Abstractions
         /// Triggers an immediate asynchronous bus scan and telemetry refresh across all devices.
         /// </summary>
         void ForceRefresh();
+
+        /// <summary>
+        /// Triggers an immediate asynchronous telemetry refresh pass across existing devices without full bus re-enumeration.
+        /// </summary>
+        void RefreshTelemetry();
+
+        /// <summary>
+        /// Reloads device profiles from embedded resources and external filesystem locations.
+        /// </summary>
+        void ReloadProfiles();
+
+        /// <summary>
+        /// Updates the periodic background telemetry polling frequency without triggering an immediate bus scan.
+        /// </summary>
+        /// <param name="pollIntervalMs">New interval between refresh passes in milliseconds.</param>
+        void SetPollInterval(int pollIntervalMs);
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the internal Win32DeviceWatcher background thread is enabled.
+        /// When false, host applications can forward system PnP events via <see cref="ProcessDeviceChangeNotification"/>.
+        /// </summary>
+        bool EnableInternalDeviceWatcher { get; set; }
+
+        /// <summary>
+        /// Processes a PnP hardware change notification forwarded by a host application with its own message pump.
+        /// </summary>
+        void ProcessDeviceChangeNotification();
     }
 }

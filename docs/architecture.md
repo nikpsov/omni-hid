@@ -106,16 +106,18 @@ Instead of relying solely on continuous CPU-intensive polling, OmniHID uses nati
 3. Intercepts `WM_DEVICECHANGE` with `DBT_DEVICEARRIVAL` and `DBT_DEVICEREMOVECOMPLETE`.
 4. Passes events through a **200 ms debounce timer**: prevents thread pool starvation when composite USB devices register multiple logical interfaces in rapid succession.
 
+### Host Window Message Pump Forwarding
+
+For GUI applications (WPF, WinForms) that already maintain their own message loop and intercept `WM_DEVICECHANGE`, spinning up a separate thread and hidden window is redundant. OmniHID allows disabling the internal thread via `EnableInternalDeviceWatcher = false` (or `new OmniManager(enableInternalWatcher: false)`) and forwarding system events directly via `manager.ProcessDeviceChangeNotification()`.
+
 ---
 
-## 5. Zero-Allocation Snapshot Architecture
+## 5. Zero-Allocation Polling & Snapshot Architecture
 
-In telemetry-driven applications, UI frameworks or background loops frequently query `manager.ConnectedDevices`.
+In telemetry-driven applications, UI frameworks or background loops frequently query device lists and battery states. OmniHID is engineered for near-zero GC heap pressure:
 
-To prevent thread lock contention and garbage collection pauses:
-- `_connectedDevicesSnapshot` is stored as an internal `volatile IOmniDevice[]` array.
-- When `ScanAndUpdate()` completes, the active devices dictionary is copied into a new array and atomically swapped in:
-  ```csharp
-  _connectedDevicesSnapshot = newDevicesList.ToArray();
-  ```
-- Reading `manager.ConnectedDevices` requires **zero locks** and creates **zero heap allocations**, guaranteeing thread-safe, non-blocking reads from any thread.
+1. **Lock-Free Snapshots:** `_connectedDevicesSnapshot` is stored as an internal `volatile IOmniDevice[]` array. Reading `manager.ConnectedDevices` requires **zero locks** and creates **zero heap allocations**, guaranteeing thread-safe, non-blocking reads from any thread.
+2. **Fast Telemetry Path (`FastRefreshTelemetry`):** When no hardware PnP events have occurred, periodic polling bypasses `SetupAPI` bus enumeration and logical device reconciliation entirely, querying battery endpoints in-place across active devices.
+3. **Reusable Collection Pooling:** Full bus scans reuse persistent collections and pooled group structures (`_byPhysicalDevice`, `_ifaceListPool`, `_groupPool`, `_logicalGroups`, `_activeWiredModels`), preventing heap allocations during recurring scan cycles.
+4. **Thread-Static Overlapped I/O Context:** `Win32HidTransport` caches unmanaged overlapped structures and manual reset events via `[ThreadStatic] OverlappedContext`, eliminating repeated `Marshal.AllocHGlobal` and `Marshal.FreeHGlobal` overhead during HID report exchanges.
+5. **Combined Endpoint Handles:** When read and write paths match (`samePath`), transfers reuse a single bidirectional file handle (`GENERIC_READ | GENERIC_WRITE`) via native `HidD_SetFeature`/`HidD_SetOutputReport` before falling back to dedicated pipes.

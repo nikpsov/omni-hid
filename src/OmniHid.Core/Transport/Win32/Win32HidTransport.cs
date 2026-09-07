@@ -48,37 +48,47 @@ namespace OmniHid.Core.Transport.Win32
                 var ifData = new Win32HidNative.SP_DEVICE_INTERFACE_DATA();
                 ifData.cbSize = (uint)Marshal.SizeOf(ifData);
 
-                uint index = 0;
-                while (Win32HidNative.SetupDiEnumDeviceInterfaces(devInfoSet, IntPtr.Zero, ref hidGuid, index, ref ifData))
+                int cbSize = IntPtr.Size == 8 ? 8 : (4 + Marshal.SystemDefaultCharSize);
+                int detailBufferSize = 1024;
+                IntPtr detailDataBuffer = Marshal.AllocHGlobal(detailBufferSize);
+
+                try
                 {
-                    index++;
-
-                    // Query required buffer size for interface details
-                    uint requiredSize;
-                    Win32HidNative.SetupDiGetDeviceInterfaceDetail(
-                        devInfoSet, ref ifData, IntPtr.Zero, 0, out requiredSize, IntPtr.Zero);
-
-                    if (requiredSize == 0) continue;
-
-                    IntPtr detailDataBuffer = Marshal.AllocHGlobal((int)requiredSize);
-                    try
+                    uint index = 0;
+                    while (Win32HidNative.SetupDiEnumDeviceInterfaces(devInfoSet, IntPtr.Zero, ref hidGuid, index, ref ifData))
                     {
-                        // cbSize must match bitness: 8 bytes for 64-bit, 5 or 6 bytes for 32-bit
-                        Marshal.WriteInt32(detailDataBuffer, IntPtr.Size == 8 ? 8 : (4 + Marshal.SystemDefaultCharSize));
+                        index++;
+
+                        Marshal.WriteInt32(detailDataBuffer, cbSize);
+                        uint requiredSize = (uint)detailBufferSize;
 
                         if (Win32HidNative.SetupDiGetDeviceInterfaceDetail(
-                            devInfoSet, ref ifData, detailDataBuffer, requiredSize, out requiredSize, IntPtr.Zero))
+                            devInfoSet, ref ifData, detailDataBuffer, (uint)detailBufferSize, out requiredSize, IntPtr.Zero))
                         {
-                            // Skip cbSize (4 bytes) to reach the DevicePath character array
                             IntPtr pDevicePath = new IntPtr(detailDataBuffer.ToInt64() + 4);
                             string devicePath = Marshal.PtrToStringAuto(pDevicePath);
                             InspectAndAddDevice(NormalizeDevicePath(devicePath), vendorId, productId, results);
                         }
+                        else if (requiredSize > detailBufferSize)
+                        {
+                            Marshal.FreeHGlobal(detailDataBuffer);
+                            detailBufferSize = (int)requiredSize + 128;
+                            detailDataBuffer = Marshal.AllocHGlobal(detailBufferSize);
+                            Marshal.WriteInt32(detailDataBuffer, cbSize);
+
+                            if (Win32HidNative.SetupDiGetDeviceInterfaceDetail(
+                                devInfoSet, ref ifData, detailDataBuffer, (uint)detailBufferSize, out requiredSize, IntPtr.Zero))
+                            {
+                                IntPtr pDevicePath = new IntPtr(detailDataBuffer.ToInt64() + 4);
+                                string devicePath = Marshal.PtrToStringAuto(pDevicePath);
+                                InspectAndAddDevice(NormalizeDevicePath(devicePath), vendorId, productId, results);
+                            }
+                        }
                     }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(detailDataBuffer);
-                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(detailDataBuffer);
                 }
             }
             finally
@@ -253,8 +263,71 @@ namespace OmniHid.Core.Transport.Win32
         // Asynchronous / Overlapped Input Reports
         // ═══════════════════════════════════════════════════════════════════════
 
+        private class OverlappedContext : IDisposable
+        {
+            public readonly ManualResetEvent Event = new ManualResetEvent(false);
+            public IntPtr POverlapped;
+            public NativeOverlapped Overlapped;
+
+            public OverlappedContext()
+            {
+                Overlapped = new NativeOverlapped();
+                Overlapped.EventHandle = Event.SafeWaitHandle.DangerousGetHandle();
+                POverlapped = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(NativeOverlapped)));
+            }
+
+            ~OverlappedContext()
+            {
+                Dispose(false);
+            }
+
+            public void Reset()
+            {
+                Event.Reset();
+                Overlapped.InternalLow = IntPtr.Zero;
+                Overlapped.InternalHigh = IntPtr.Zero;
+                Overlapped.OffsetLow = 0;
+                Overlapped.OffsetHigh = 0;
+                Overlapped.EventHandle = Event.SafeWaitHandle.DangerousGetHandle();
+                Marshal.StructureToPtr(Overlapped, POverlapped, false);
+            }
+
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+
+            private void Dispose(bool disposing)
+            {
+                if (POverlapped != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(POverlapped);
+                    POverlapped = IntPtr.Zero;
+                }
+                if (disposing && Event != null)
+                {
+                    Event.Dispose();
+                }
+            }
+        }
+
+        [ThreadStatic]
+        private static OverlappedContext _tlOverlappedContext;
+
+        private static OverlappedContext GetOrCreateOverlappedContext()
+        {
+            if (_tlOverlappedContext == null)
+            {
+                _tlOverlappedContext = new OverlappedContext();
+            }
+            _tlOverlappedContext.Reset();
+            return _tlOverlappedContext;
+        }
+
         /// <summary>
         /// Reads an Input Report with timeout using Win32 non-blocking Overlapped I/O.
+        /// Reuses a thread-static unmanaged overlapped buffer and wait handle to eliminate heap allocations.
         /// </summary>
         public bool ReadInputReport(string devicePath, byte[] buffer, int timeoutMs)
         {
@@ -264,43 +337,28 @@ namespace OmniHid.Core.Transport.Win32
             {
                 if (handle.IsInvalid) return false;
 
-                using (ManualResetEvent evt = new ManualResetEvent(false))
+                OverlappedContext ctx = GetOrCreateOverlappedContext();
+                uint bytesRead;
+                bool success = Win32HidNative.ReadFile(handle, buffer, (uint)buffer.Length, out bytesRead, ctx.POverlapped);
+                if (!success)
                 {
-                    NativeOverlapped overlapped = new NativeOverlapped();
-                    overlapped.EventHandle = evt.SafeWaitHandle.DangerousGetHandle();
-
-                    IntPtr pOverlapped = Marshal.AllocHGlobal(Marshal.SizeOf(overlapped));
-                    try
+                    int error = Marshal.GetLastWin32Error();
+                    if (error == Win32HidNative.ERROR_IO_PENDING)
                     {
-                        Marshal.StructureToPtr(overlapped, pOverlapped, false);
-
-                        uint bytesRead;
-                        bool success = Win32HidNative.ReadFile(handle, buffer, (uint)buffer.Length, out bytesRead, pOverlapped);
-                        if (!success)
+                        if (ctx.Event.WaitOne(timeoutMs))
                         {
-                            int error = Marshal.GetLastWin32Error();
-                            if (error == Win32HidNative.ERROR_IO_PENDING)
-                            {
-                                if (evt.WaitOne(timeoutMs))
-                                {
-                                    return Win32HidNative.GetOverlappedResult(handle, pOverlapped, out bytesRead, false);
-                                }
-                                else
-                                {
-                                    Win32HidNative.CancelIoEx(handle, pOverlapped);
-                                    Win32HidNative.GetOverlappedResult(handle, pOverlapped, out bytesRead, true);
-                                    return false;
-                                }
-                            }
+                            return Win32HidNative.GetOverlappedResult(handle, ctx.POverlapped, out bytesRead, false);
+                        }
+                        else
+                        {
+                            Win32HidNative.CancelIoEx(handle, ctx.POverlapped);
+                            Win32HidNative.GetOverlappedResult(handle, ctx.POverlapped, out bytesRead, true);
                             return false;
                         }
-                        return true;
                     }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(pOverlapped);
-                    }
+                    return false;
                 }
+                return true;
             }
         }
 
@@ -354,6 +412,7 @@ namespace OmniHid.Core.Transport.Win32
         /// Performs an atomic Write-then-Read sequence with smart packet stream filtering.
         /// Discards extraneous streaming packets (such as active mouse motion on 1000/8000Hz gaming mice)
         /// while waiting for the requested report ID or command response within the timeout window.
+        /// Reuses a single combined read/write file handle when paths match and pooled overlapped wait handles.
         /// </summary>
         public bool Exchange(string writePath, byte[] request, string readPath, byte[] response, int timeoutMs, byte expectedReportId = 0)
         {
@@ -361,98 +420,104 @@ namespace OmniHid.Core.Transport.Win32
                 return false;
 
             byte filterReportId = expectedReportId != 0 ? expectedReportId : response[0];
+            bool samePath = string.Equals(writePath, readPath, StringComparison.OrdinalIgnoreCase);
 
-            using (SafeFileHandle readHandle = OpenDevice(readPath, Win32HidNative.GENERIC_READ, true))
+            uint accessFlags = samePath ? (Win32HidNative.GENERIC_READ | Win32HidNative.GENERIC_WRITE) : Win32HidNative.GENERIC_READ;
+
+            using (SafeFileHandle readHandle = OpenDevice(readPath, accessFlags, true))
             {
                 if (readHandle.IsInvalid) return false;
 
-                using (ManualResetEvent readEvent = new ManualResetEvent(false))
+                OverlappedContext ctx = GetOrCreateOverlappedContext();
+                bool pendingIo = false;
+                try
                 {
-                    NativeOverlapped readOverlapped = new NativeOverlapped();
-                    readOverlapped.EventHandle = readEvent.SafeWaitHandle.DangerousGetHandle();
+                    uint bytesRead;
+                    bool readInitiated = Win32HidNative.ReadFile(readHandle, response, (uint)response.Length, out bytesRead, ctx.POverlapped);
+                    int readError = Marshal.GetLastWin32Error();
 
-                    IntPtr pReadOverlapped = Marshal.AllocHGlobal(Marshal.SizeOf(readOverlapped));
-                    bool pendingIo = false;
-                    try
+                    if (!readInitiated && readError != Win32HidNative.ERROR_IO_PENDING)
                     {
-                        Marshal.StructureToPtr(readOverlapped, pReadOverlapped, false);
+                        return false;
+                    }
+                    pendingIo = !readInitiated;
 
-                        uint bytesRead;
-                        bool readInitiated = Win32HidNative.ReadFile(readHandle, response, (uint)response.Length, out bytesRead, pReadOverlapped);
-                        int readError = Marshal.GetLastWin32Error();
-
-                        if (!readInitiated && readError != Win32HidNative.ERROR_IO_PENDING)
+                    // Send request via Feature Report, falling back to Output Report
+                    bool writeOk = false;
+                    if (samePath)
+                    {
+                        writeOk = Win32HidNative.HidD_SetFeature(readHandle, request, (uint)request.Length);
+                        if (!writeOk)
                         {
-                            return false;
+                            writeOk = Win32HidNative.HidD_SetOutputReport(readHandle, request, (uint)request.Length);
                         }
-                        pendingIo = !readInitiated;
+                    }
 
-                        // Send request via Feature Report, falling back to Output Report
-                        bool writeOk = SetFeatureReport(writePath, request);
+                    // If same-path control transfers were not supported or separate endpoints are configured,
+                    // fall back to dedicated synchronous SetFeatureReport and WriteOutputReport pipelines
+                    if (!writeOk)
+                    {
+                        writeOk = SetFeatureReport(writePath, request);
                         if (!writeOk)
                         {
                             writeOk = WriteOutputReport(writePath, request);
                         }
+                    }
 
-                        if (!writeOk)
+                    if (!writeOk)
+                    {
+                        return false;
+                    }
+
+                    Stopwatch sw = Stopwatch.StartNew();
+
+                    do
+                    {
+                        int remainingMs = timeoutMs - (int)sw.ElapsedMilliseconds;
+                        if (remainingMs <= 0) break;
+
+                        if (!readInitiated)
                         {
-                            return false;
-                        }
-
-                        Stopwatch sw = Stopwatch.StartNew();
-
-                        do
-                        {
-                            int remainingMs = timeoutMs - (int)sw.ElapsedMilliseconds;
-                            if (remainingMs <= 0) break;
-
-                            if (!readInitiated)
-                            {
-                                if (!readEvent.WaitOne(remainingMs))
-                                {
-                                    break;
-                                }
-
-                                if (!Win32HidNative.GetOverlappedResult(readHandle, pReadOverlapped, out bytesRead, false))
-                                {
-                                    break;
-                                }
-                                pendingIo = false;
-                            }
-
-                            // If a specific report ID is expected, filter out extraneous streaming packets (e.g. mouse coordinates)
-                            if (filterReportId == 0 || response[0] == filterReportId)
-                            {
-                                return true;
-                            }
-
-                            // Discard extraneous packet and queue next read
-                            readEvent.Reset();
-                            readOverlapped.OffsetLow = 0;
-                            readOverlapped.OffsetHigh = 0;
-                            Marshal.StructureToPtr(readOverlapped, pReadOverlapped, false);
-
-                            readInitiated = Win32HidNative.ReadFile(readHandle, response, (uint)response.Length, out bytesRead, pReadOverlapped);
-                            readError = Marshal.GetLastWin32Error();
-                            if (!readInitiated && readError != Win32HidNative.ERROR_IO_PENDING)
+                            if (!ctx.Event.WaitOne(remainingMs))
                             {
                                 break;
                             }
-                            pendingIo = !readInitiated;
 
-                        } while (sw.ElapsedMilliseconds < timeoutMs);
-
-                        return false;
-                    }
-                    finally
-                    {
-                        if (pendingIo)
-                        {
-                            uint bytesRead;
-                            Win32HidNative.CancelIoEx(readHandle, pReadOverlapped);
-                            Win32HidNative.GetOverlappedResult(readHandle, pReadOverlapped, out bytesRead, true);
+                            if (!Win32HidNative.GetOverlappedResult(readHandle, ctx.POverlapped, out bytesRead, false))
+                            {
+                                break;
+                            }
+                            pendingIo = false;
                         }
-                        Marshal.FreeHGlobal(pReadOverlapped);
+
+                        // If a specific report ID is expected, filter out extraneous streaming packets (e.g. mouse coordinates)
+                        if (filterReportId == 0 || response[0] == filterReportId)
+                        {
+                            return true;
+                        }
+
+                        // Discard extraneous packet and queue next read
+                        ctx.Reset();
+
+                        readInitiated = Win32HidNative.ReadFile(readHandle, response, (uint)response.Length, out bytesRead, ctx.POverlapped);
+                        readError = Marshal.GetLastWin32Error();
+                        if (!readInitiated && readError != Win32HidNative.ERROR_IO_PENDING)
+                        {
+                            break;
+                        }
+                        pendingIo = !readInitiated;
+
+                    } while (sw.ElapsedMilliseconds < timeoutMs);
+
+                    return false;
+                }
+                finally
+                {
+                    if (pendingIo)
+                    {
+                        Win32HidNative.CancelIoEx(readHandle, ctx.POverlapped);
+                        uint bytesRead;
+                        Win32HidNative.GetOverlappedResult(readHandle, ctx.POverlapped, out bytesRead, true);
                     }
                 }
             }

@@ -68,8 +68,28 @@ To start monitoring, instantiate `OmniManager`:
 using OmniHid.Core;
 using OmniHid.Core.Abstractions;
 
-// Uses default Win32HidTransport and built-in DeviceRegistry
+// Uses default Win32HidTransport, built-in DeviceRegistry, and internal PnP watcher thread
 IOmniManager manager = new OmniManager();
+```
+
+### GUI Applications with Existing Message Loop
+
+In graphical applications (such as WPF or WinForms) that already run a native Win32 window message pump and intercept `WM_DEVICECHANGE`, you can disable the internal background thread and message window to save thread overhead and memory:
+
+```csharp
+// Disable redundant internal watcher thread
+IOmniManager manager = new OmniManager(enableInternalWatcher: false);
+
+// In your window's WndProc / HwndSource hook:
+protected override void WndProc(ref Message m)
+{
+    const int WM_DEVICECHANGE = 0x0219;
+    if (m.Msg == WM_DEVICECHANGE)
+    {
+        manager.ProcessDeviceChangeNotification();
+    }
+    base.WndProc(ref m);
+}
 ```
 
 ### Dependency Injection / Custom Components
@@ -77,10 +97,10 @@ IOmniManager manager = new OmniManager();
 If you need custom transport mocks for unit testing or an isolated registry:
 
 ```csharp
-var customTransport = new Win32HidTransport();
 var customRegistry = new DeviceRegistry();
+var customTransport = new Win32HidTransport();
 
-IOmniManager manager = new OmniManager(customTransport, customRegistry);
+IOmniManager manager = new OmniManager(customRegistry, customTransport);
 ```
 
 ---
@@ -138,9 +158,20 @@ Calling `StartMonitoring()` activates two mechanisms:
 // Start monitoring with an update interval of 30 seconds
 manager.StartMonitoring(pollIntervalMs: 30000);
 
+// Dynamically adjust polling frequency (e.g. throttle to 60s during games or locked session)
+manager.SetPollInterval(60000);
+
 // Pause or stop monitoring
 manager.StopMonitoring();
 ```
+
+### Asynchronous Telemetry Refresh & Rescan
+
+OmniHID provides distinct methods depending on the level of refresh needed:
+
+- **`RefreshTelemetry()`**: Triggers an asynchronous telemetry query across existing active devices without re-enumerating the USB bus. It operates along the zero-allocation `FastRefreshTelemetry()` pipeline when no hardware changes have occurred, making it ideal for unthrottling after fullscreen games or window wakeups.
+- **`ForceRefresh()`**: Triggers a complete hardware bus enumeration and logical device reconciliation pass across all devices.
+- **`ReloadProfiles()`**: Clears and reloads declarative JSON profiles from embedded assembly resources and external filesystem directories.
 
 ### On-Demand Querying
 

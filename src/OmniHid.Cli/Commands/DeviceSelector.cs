@@ -51,7 +51,7 @@ namespace OmniHid.Cli.Commands
             profile = null;
             targetPids = new HashSet<ushort>();
 
-            using (var manager = new OmniManager(transport))
+            using (var manager = new OmniManager(transport, enableInternalWatcher: false))
             {
                 var allDevices = manager.ScanDevices();
                 var targets = new List<IOmniDevice>();

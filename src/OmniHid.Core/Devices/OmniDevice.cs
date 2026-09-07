@@ -59,6 +59,11 @@ namespace OmniHid.Core.Devices
         /// <summary>Most recent battery telemetry snapshot.</summary>
         public BatteryTelemetry Telemetry { get; private set; }
 
+        /// <summary>
+        /// Gets or sets the assigned XInput controller user slot (0..3), or -1 if unassigned.
+        /// </summary>
+        public int AssignedSlot { get; set; }
+
         /// <summary>Reference to the associated declarative profile.</summary>
         public DeviceProfile Profile { get { return _profile; } }
 
@@ -99,6 +104,7 @@ namespace OmniHid.Core.Devices
             Category = profile.Category;
             Capabilities = profile.Capabilities;
             ProtocolId = profile.ProtocolId;
+            AssignedSlot = profile.AssignedSlot;
             IsConnected = true;
             Telemetry = BatteryTelemetry.Offline("Initializing...");
         }
@@ -156,6 +162,11 @@ namespace OmniHid.Core.Devices
 
             try
             {
+                if (AssignedSlot >= 0 && _profile != null && _profile.AssignedSlot != AssignedSlot)
+                {
+                    _profile.AssignedSlot = AssignedSlot;
+                }
+
                 Telemetry = _protocol.QueryBattery(_transport, currentInterfaces, _profile);
                 if (Telemetry.IsAvailable)
                 {

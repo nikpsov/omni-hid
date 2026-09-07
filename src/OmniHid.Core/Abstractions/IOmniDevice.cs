@@ -60,6 +60,11 @@ namespace OmniHid.Core.Abstractions
         bool IsCustomProfile { get; }
 
         /// <summary>
+        /// Gets or sets the assigned XInput controller user slot (0..3), or -1 if unassigned.
+        /// </summary>
+        int AssignedSlot { get; set; }
+
+        /// <summary>
         /// Gets a value indicating whether this device was instantiated from a validated declarative JSON profile.
         /// </summary>
         bool IsRegisteredProfile { get; }

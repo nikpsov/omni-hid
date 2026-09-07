@@ -38,7 +38,7 @@ namespace OmniHid.Cli.Commands
             Console.WriteLine();
 
             using (var transport = new Win32HidTransport())
-            using (var manager = new OmniManager(transport))
+            using (var manager = new OmniManager(transport, enableInternalWatcher: false))
             {
                 string devName;
                 ushort vid;

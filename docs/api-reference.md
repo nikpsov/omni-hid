@@ -51,6 +51,7 @@ public interface IOmniManager : IDisposable
 | :--- | :--- | :--- |
 | `ConnectedDevices` | `IReadOnlyList<IOmniDevice>` | Thread-safe snapshot of all currently tracked and active devices. |
 | `RegisteredOnly` | `bool` | Gets or sets whether only peripherals with validated declarative (.json) profiles are tracked. |
+| `EnableInternalDeviceWatcher` | `bool` | Gets or sets whether the internal `Win32DeviceWatcher` background thread is active. Host apps can set this to `false` and forward events via `ProcessDeviceChangeNotification()`. |
 
 #### Methods
 
@@ -58,7 +59,11 @@ public interface IOmniManager : IDisposable
 | :--- | :--- | :--- |
 | `StartMonitoring(int pollIntervalMs = 15000)` | `void` | Begins periodic background polling and starts the Win32 USB PnP arrival/removal watcher. |
 | `StopMonitoring()` | `void` | Suspends the background polling timer. |
-| `ForceRefresh()` | `void` | Triggers an immediate asynchronous bus scan and telemetry refresh pass. |
+| `SetPollInterval(int pollIntervalMs)` | `void` | Updates the periodic telemetry polling frequency without triggering an immediate bus scan. |
+| `RefreshTelemetry()` | `void` | Triggers an immediate asynchronous telemetry refresh pass across existing devices without full bus re-enumeration. |
+| `ForceRefresh()` | `void` | Triggers an immediate asynchronous full bus scan and telemetry refresh across all devices. |
+| `ReloadProfiles()` | `void` | Reloads device profiles from embedded resources and external filesystem locations. |
+| `ProcessDeviceChangeNotification()` | `void` | Processes a PnP hardware change notification forwarded by a host application with its own Win32 message pump. |
 
 #### Events
 
@@ -90,6 +95,7 @@ public interface IOmniDevice
 | `Category` | `DeviceCategory` | Functional category (`Mouse`, `Keyboard`, `Headset`, `Gamepad`). |
 | `Capabilities` | `DeviceCapabilities` | Bitwise flags of supported features (`BatteryLevel`, `ChargingStatus`, etc.). |
 | `ProtocolId` | `string` | Identifier of the driver handling this device (e.g. `"areson"`, `"royuan"`). |
+| `AssignedSlot` | `int` | Assigned XInput controller user slot (0..3), or -1 if unassigned. |
 | `IsConnected` | `bool` | `true` if peripheral is currently reachable and online. |
 | `IsWired` | `bool` | `true` if connected via direct USB cable rather than wireless receiver. |
 | `IsCustomProfile` | `bool` | `true` if instantiated from an external JSON profile. |
@@ -222,7 +228,7 @@ public class OmniManager : IOmniManager
 
 #### Constructors
 
-- `OmniManager(IHidTransport transport = null, DeviceRegistry registry = null)`
+- `OmniManager(DeviceRegistry registry = null, IHidTransport transport = null, bool enableInternalWatcher = true)`
 
 #### Properties
 
@@ -231,6 +237,7 @@ public class OmniManager : IOmniManager
 | `ConnectedDevices` | `IReadOnlyList<IOmniDevice>` | Thread-safe snapshot list of all currently tracked devices. |
 | `DeduplicateWiredWireless` | `bool` | Gets/sets whether wireless receivers are suppressed when wired mode is active. Default: `true`. |
 | `Registry` | `DeviceRegistry` | The device catalog and profile registry. |
+| `EnableInternalDeviceWatcher` | `bool` | Gets/sets whether the internal `Win32DeviceWatcher` background thread is active. Host apps can set this to `false` and forward events via `ProcessDeviceChangeNotification()`. |
 
 #### Methods
 
@@ -239,7 +246,11 @@ public class OmniManager : IOmniManager
 | `RegisterProtocol(IProtocolHandler protocol, params string[] aliases)` | `void` | Registers a custom protocol handler instance and optional aliases. |
 | `StartMonitoring(int pollIntervalMs = 15000)` | `void` | Starts periodic background polling and USB PnP device monitoring. |
 | `StopMonitoring()` | `void` | Stops periodic background polling. |
-| `ForceRefresh()` | `void` | Reloads profiles and triggers an immediate asynchronous bus scan. |
+| `SetPollInterval(int pollIntervalMs)` | `void` | Updates the periodic telemetry polling frequency without triggering an immediate bus scan. |
+| `RefreshTelemetry()` | `void` | Triggers an immediate asynchronous telemetry refresh pass across existing devices without full bus re-enumeration. |
+| `ForceRefresh()` | `void` | Triggers an immediate asynchronous full bus scan and telemetry refresh across all devices. |
+| `ReloadProfiles()` | `void` | Reloads device profiles from embedded resources and external filesystem locations. |
+| `ProcessDeviceChangeNotification()` | `void` | Processes a PnP hardware change notification forwarded by a host application with its own Win32 message pump. |
 | `ScanDevices()` | `List<IOmniDevice>` | Synchronously scans the hardware bus and returns active devices. |
 | `Dispose()` | `void` | Disposes background timers, file watchers, and native window hooks. |
 
