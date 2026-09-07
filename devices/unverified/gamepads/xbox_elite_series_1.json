@@ -1,0 +1,9 @@
+{
+  "model_name": "Xbox Elite Wireless Controller Series 1",
+  "vendor_id": "0x045E",
+  "product_ids": [ "0x02E3", "0x02E6" ],
+  "category": "Gamepad",
+  "protocol": "xbox-controller",
+  "battery_life_hours": 30,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

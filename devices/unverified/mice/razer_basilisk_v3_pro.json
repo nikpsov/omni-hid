@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Basilisk V3 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x00AA", "0x00AB", "0x00CC", "0x00CD" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 90,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

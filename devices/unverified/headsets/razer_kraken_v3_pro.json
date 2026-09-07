@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Kraken V3 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0532", "0x0533" ],
+  "category": "Headset",
+  "protocol": "razer",
+  "battery_life_hours": 44,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

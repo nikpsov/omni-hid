@@ -1,0 +1,9 @@
+{
+  "model_name": "SteelSeries Arctis 1 Wireless",
+  "vendor_id": "0x1038",
+  "product_ids": [ "0x12B3", "0x12B6" ],
+  "category": "Headset",
+  "protocol": "steelseries",
+  "battery_life_hours": 20,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

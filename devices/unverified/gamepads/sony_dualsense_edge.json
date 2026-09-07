@@ -1,0 +1,9 @@
+{
+  "model_name": "Sony DualSense Edge",
+  "vendor_id": "0x054C",
+  "product_ids": [ "0x0DF2" ],
+  "category": "Gamepad",
+  "protocol": "sony-dualsense",
+  "battery_life_hours": 6,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

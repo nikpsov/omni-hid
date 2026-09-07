@@ -65,7 +65,7 @@ namespace OmniHid.Cli.Commands
                     if (registeredOnly)
                     {
                         Console.WriteLine("No registered (.json) peripherals detected.");
-                        Console.WriteLine("Tip: Place your device profile in devices/*.json or %APPDATA%\\OmniHid\\devices\\");
+                        Console.WriteLine("Tip: Place your device profile in %APPDATA%\\OmniHid\\devices\\ (verified/ or unverified/)");
                         Console.WriteLine("     Run 'omni-hid scan' (or option [1]) to view all detected devices with heuristics.");
                         Console.WriteLine("     Run 'omni-hid list' (or option [2]) to view all active HID hardware interfaces.");
                         Console.WriteLine("     Run 'omni-hid hunt' (or option [4]) to reverse-engineer battery reports from any device.");
@@ -115,7 +115,8 @@ namespace OmniHid.Cli.Commands
 
                     bool isCustom = dev.IsCustomProfile;
                     if (isCustom) customProfileCount++;
-                    string devName = (isCustom ? "📄 " : "   ") + dev.Name;
+                    string prefix = !dev.IsVerified ? "🧪 " : (isCustom ? "📄 " : "   ");
+                    string devName = prefix + dev.Name;
                     if (devName.Length > 30) devName = devName.Substring(0, 27) + "...";
 
                     string vidPid = string.Format("{0:X4}:{1:X4}", dev.VendorId, dev.ProductId);

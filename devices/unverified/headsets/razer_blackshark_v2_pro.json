@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer BlackShark V2 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0529", "0x052B", "0x053F", "0x0540" ],
+  "category": "Headset",
+  "protocol": "razer",
+  "battery_life_hours": 70,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

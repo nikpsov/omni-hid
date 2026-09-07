@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G PRO X Superlight 2",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x4095", "0xC09B" ],
+  "category": "Mouse",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 95,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

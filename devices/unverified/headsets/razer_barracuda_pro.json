@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Barracuda Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x052D" ],
+  "category": "Headset",
+  "protocol": "razer",
+  "battery_life_hours": 40,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

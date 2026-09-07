@@ -1,0 +1,9 @@
+{
+  "model_name": "HyperX Cloud Alpha Wireless",
+  "vendor_id": "0x03F0",
+  "product_ids": [ "0x098B", "0x068E" ],
+  "category": "Headset",
+  "protocol": "hyperx-headset",
+  "battery_life_hours": 300,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

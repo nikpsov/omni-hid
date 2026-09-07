@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G502 X Plus",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x4092", "0xC098" ],
+  "category": "Mouse",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 120,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

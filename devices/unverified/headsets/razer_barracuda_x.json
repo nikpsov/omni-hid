@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Barracuda X",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0534", "0x0539", "0x0543" ],
+  "category": "Headset",
+  "protocol": "razer",
+  "battery_life_hours": 50,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

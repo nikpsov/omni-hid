@@ -1,0 +1,9 @@
+{
+  "model_name": "HyperX Cloud II Wireless",
+  "vendor_id": "0x03F0",
+  "product_ids": [ "0x0696", "0x018B" ],
+  "category": "Headset",
+  "protocol": "hyperx-headset",
+  "battery_life_hours": 30,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

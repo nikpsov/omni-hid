@@ -1,0 +1,44 @@
+name: Device Profiles Catalog
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'devices/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-catalog:
+    name: Package & Publish Devices Catalog
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Package Devices Catalog
+        run: |
+          mkdir -p dist
+          # Package devices directory preserving verified/ and unverified/ subdirectories
+          cd devices
+          zip -r ../dist/devices.zip .
+          cd ..
+          echo "Catalog archive packaged successfully:"
+          ls -lh dist/devices.zip
+
+      - name: Publish to catalog branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan catalog
+          git rm -rf .
+          mv dist/devices.zip ./devices.zip
+          git add devices.zip
+          git commit -m "Update device profiles catalog [skip ci]"
+          git push origin catalog --force

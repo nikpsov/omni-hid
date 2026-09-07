@@ -1,0 +1,9 @@
+{
+  "model_name": "Corsair Virtuoso XT",
+  "vendor_id": "0x1B1C",
+  "product_ids": [ "0x0A37", "0x0A38", "0x0A46" ],
+  "category": "Headset",
+  "protocol": "corsair-headset",
+  "battery_life_hours": 15,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

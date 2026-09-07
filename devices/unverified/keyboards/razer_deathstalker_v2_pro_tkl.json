@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer DeathStalker V2 Pro TKL",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0294", "0x0296", "0x0298" ],
+  "category": "Keyboard",
+  "protocol": "razer",
+  "battery_life_hours": 50,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

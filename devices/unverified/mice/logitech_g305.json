@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G305 Lightspeed",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x4074", "0xC086" ],
+  "category": "Mouse",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 250,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

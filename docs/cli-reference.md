@@ -40,9 +40,10 @@ Running `omni-hid` without arguments presents the numbered console dashboard:
     [7] 🎯 A-B Battery & Charger Calibration (Guided Plug/Unplug Diff Engine)
     [8] 🤖 Export AI-Ready Protocol Specification (.md)
     [9] 📄 Scan Registered Devices Only (Verified .json Profiles)
+    [U] 🌐 Update Device Profiles (OTA from GitHub)
     [0] 🚪 Exit
 
-  Enter choice [0-9] or command:
+  Enter choice [0-9, U] or command:
 ```
 
 In interactive mode, options can also be combined (e.g. entering `1 -r`, `1 --all`, or `5 mouse`).
@@ -76,7 +77,7 @@ Category     Device Name                      VID:PID      Battery        Status
 
 #### Flags
 
-- `--registered`, `-r`: Filters output to only display verified peripherals with declarative `.json` profiles (embedded in `devices/**/*.json` or user-defined in `%APPDATA%\OmniHid\devices\`). Unverified vendor heuristics and generic peripherals are excluded.
+- `--registered`, `-r`: Filters output to only display peripherals with declarative `.json` profiles (loaded from `%APPDATA%\OmniHid\devices\` or portable `./devices/`). Unverified vendor heuristics and generic peripherals are excluded.
 - `--all`, `-a`, `--no-dedup`: Disables automatic wired/wireless companion receiver deduplication. Displays all physical and logical endpoints simultaneously, tagging dormant dongles with `⏸ Standby`.
 
 ---
@@ -202,15 +203,32 @@ The generated file includes:
 
 ---
 
-### 9. `registered` — Query Only Verified (.json) Profiles
+### 9. `registered` — Query Only Declarative (.json) Profiles
 
-Scans for peripherals strictly defined in declarative `.json` profile files (bundled in `devices/**/*.json` or placed in `%APPDATA%\OmniHid\devices\`). Unlike standard `scan`, this command completely omits unverified generic devices and dynamic vendor heuristics.
+Scans for peripherals strictly defined in declarative `.json` profile files (loaded from `%APPDATA%\OmniHid\devices\` or portable `./devices/`). Unlike standard `scan`, this command completely omits unverified generic devices and dynamic vendor heuristics.
 
 ```cmd
 omni-hid registered
 omni-hid 9
 omni-hid scan-registered ardor
 ```
+
+---
+
+### 10. `update` — Over-The-Air (OTA) Device Profiles Sync
+
+Downloads and synchronizes the latest declarative peripheral profiles directly from the upstream GitHub repository without recompilation or binary releases:
+
+```cmd
+omni-hid update
+omni-hid sync
+omni-hid u
+```
+
+- **Clean Payload (~5–8 KB):** Downloads a pre-packaged `devices.zip` from the `catalog` branch published by GitHub Actions (with seamless fallback to the repository archive).
+- **Dual Category Extraction:** Synchronizes both tested profiles (`devices/verified/`) and experimental/community profiles (`devices/unverified/`).
+- **Catalog Status:** Displays total, verified, and unverified counts along with the active target directory (`%APPDATA%\OmniHid\devices\` or portable `./devices/`).
+- **Immediate Reload:** Reloads the active registry in-process, immediately reflecting newly downloaded models and configurations.
 
 ---
 

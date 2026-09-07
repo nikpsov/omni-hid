@@ -168,6 +168,7 @@ omni-hid [command|number] [filter] [options]
 | `[7]` | `calibrate` | `omni-hid calibrate [filter]` | Guided A-B calibration wizard: compares state on battery vs charging cable to isolate charging and battery bytes. |
 | `[8]` | `export` | `omni-hid export [filter]` | Generates `device_spec_<VID>_<PID>.md` with endpoint topology and a ready-made LLM prompt for writing a C# driver. |
 | `[9]` | `registered` | `omni-hid registered [filter]` | Scans only verified peripherals with declarative `.json` profiles (omits heuristics/unprofiled devices). |
+| `[U]` | `update` | `omni-hid update` | Synchronizes latest device profiles Over-The-Air (OTA) directly from the upstream GitHub repository. |
 | `[0]` | `help` | `omni-hid help` | Displays syntax, options, and usage examples. |
 
 ---
@@ -225,7 +226,7 @@ If the device uses one of the supported protocol drivers, simply add a `.json` f
 }
 ```
 
-> **Hot Reload**: Files placed in `%APPDATA%\OmniHid\devices\` or `./devices/` are automatically detected via `FileSystemWatcher` and hot-reloaded at runtime without restarting your application. Custom profiles are tagged with `📄` in the CLI.
+> **Hot Reload & OTA Sync**: Files placed in `%APPDATA%\OmniHid\devices\` (or `./devices/`) are organized into `verified/` (tested repository profiles) and `unverified/` (experimental/community profiles). They are automatically detected via `FileSystemWatcher` and hot-reloaded at runtime without restarting your application. Run `omni-hid update` to synchronize the latest profile catalog Over-The-Air from GitHub without rebuilding.
 
 ### 2. Unknown Protocols — 3-Step Reverse Engineering
 
@@ -242,8 +243,8 @@ Explore detailed documentation in the [`docs/`](docs/) directory:
 - 📖 [**Getting Started**](docs/getting-started.md) — System requirements, build targets, first run.
 - 💻 [**Developer Guide**](docs/developer-guide.md) — C# library integration, lifecycle, UI thread dispatching (WPF/WinForms), system tray sample.
 - 📚 [**API Reference**](docs/api-reference.md) — Public types: `IOmniManager`, `IOmniDevice`, `BatteryTelemetry`, `IHidTransport`, etc.
-- ⚙️ [**CLI Reference**](docs/cli-reference.md) — Full manual for all 9 `omni-hid` subcommands and diagnostic tools.
-- 📄 [**Device Profiles & Hot Reload**](docs/device-profiles.md) — JSON profile schema, hot reload directories, and dual-mode configuration.
+- ⚙️ [**CLI Reference**](docs/cli-reference.md) — Full manual for all 10 `omni-hid` subcommands and diagnostic tools.
+- 📄 [**Device Profiles & Hot Reload**](docs/device-profiles.md) — JSON profile schema, hot reload directories, verified/unverified groups, and OTA sync.
 - 🔬 [**Protocol Development**](docs/protocol-development.md) — Reverse-engineering wire formats and implementing `IProtocolHandler`.
 - 🏛️ [**Architecture & Internals**](docs/architecture.md) — Win32 P/Invoke subsystem, multi-interface aggregation, and zero-allocation snapshot design.
 
@@ -259,11 +260,11 @@ Explore detailed documentation in the [`docs/`](docs/) directory:
 
 ```
 omni-hid/
-├── devices/                 # Declarative JSON device profiles (embedded at build)
-│   ├── gamepads/            # Controller profiles (Xbox, etc.)
-│   ├── headsets/            # Headset profiles (Logitech, Corsair, etc.)
-│   ├── keyboards/           # Keyboard profiles (ROYUAN, Akko, etc.)
-│   └── mice/                # Mouse profiles (Areson, CompX, etc.)
+├── .github/workflows/       # CI/CD: build verification, release packaging, catalog OTA
+│   └── catalog.yml          # Auto-packages devices.zip on commit to main
+├── devices/                 # Declarative JSON device profiles (disk / OTA based)
+│   ├── verified/            # Tested and verified repository profiles
+│   └── unverified/          # Experimental, custom, and community profiles
 ├── docs/                    # Complete technical and developer documentation
 │   ├── api-reference.md     # Core C# API documentation
 │   ├── architecture.md      # Architecture, Win32 P/Invoke, and aggregation

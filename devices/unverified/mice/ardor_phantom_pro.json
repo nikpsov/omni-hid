@@ -1,0 +1,9 @@
+{
+  "model_name": "ARDOR Gaming Phantom PRO",
+  "vendor_id": "0x24AE",
+  "product_ids": [ "0x1818" ],
+  "category": "Mouse",
+  "protocol": "compx",
+  "battery_life_hours": 70,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

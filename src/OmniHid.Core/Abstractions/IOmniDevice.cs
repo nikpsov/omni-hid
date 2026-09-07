@@ -70,6 +70,11 @@ namespace OmniHid.Core.Abstractions
         bool IsRegisteredProfile { get; }
 
         /// <summary>
+        /// Gets a value indicating whether this device profile belongs to verified repository profiles.
+        /// </summary>
+        bool IsVerified { get; }
+
+        /// <summary>
         /// Gets the most recent cached battery and power telemetry snapshot for this device.
         /// </summary>
         BatteryTelemetry Telemetry { get; }

@@ -1,0 +1,9 @@
+{
+  "model_name": "Xbox 360 Wireless Controller",
+  "vendor_id": "0x045E",
+  "product_ids": [ "0x028E", "0x028F", "0x0719" ],
+  "category": "Gamepad",
+  "protocol": "xbox-controller",
+  "battery_life_hours": 25,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

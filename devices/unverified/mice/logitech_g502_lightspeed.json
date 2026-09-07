@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G502 Lightspeed",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x407E", "0xC08D" ],
+  "category": "Mouse",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 60,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

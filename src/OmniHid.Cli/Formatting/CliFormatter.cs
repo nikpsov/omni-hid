@@ -54,6 +54,7 @@ namespace OmniHid.Cli.Formatting
             Console.WriteLine("  [7] calibrate [filter]   Guided A-B calibration (diff state on battery vs charging cable)");
             Console.WriteLine("  [8] export    [filter]   Export device diagnostics (.md for GitHub Issue / AI spec & profile)");
             Console.WriteLine("  [9] registered [filter]  Scan only verified peripherals with declarative (.json) profiles");
+            Console.WriteLine("  [U] update               Download & synchronize latest device profiles from GitHub (OTA)");
             Console.WriteLine("  [0] help                 Show this help information");
             Console.ResetColor();
             Console.WriteLine();
@@ -74,6 +75,7 @@ namespace OmniHid.Cli.Formatting
             Console.ForegroundColor = ConsoleColor.DarkCyan;
             Console.WriteLine("  omni-hid                          (Launch interactive numbered menu)");
             Console.WriteLine("  omni-hid 1                        (Quick scan via number)");
+            Console.WriteLine("  omni-hid update                   (Synchronize device profiles OTA from GitHub)");
             Console.WriteLine("  omni-hid 7 ardor                  (A-B calibrate battery & charging flag on Ardor mouse)");
             Console.WriteLine("  omni-hid 8 vgn                    (Export diagnostics and GitHub Issue report for VGN mouse)");
             Console.WriteLine("  omni-hid 4 25a7                   (Hunt battery telemetry on Ardor/Areson 0x25A7)");

@@ -56,6 +56,9 @@ namespace OmniHid.Core.Devices
         /// <summary>Gets a value indicating whether this device was instantiated from a validated declarative JSON profile.</summary>
         public bool IsRegisteredProfile { get { return _profile != null && _profile.IsRegisteredProfile; } }
 
+        /// <summary>Gets a value indicating whether this device profile belongs to verified repository profiles.</summary>
+        public bool IsVerified { get { return _profile == null || _profile.IsVerified; } }
+
         /// <summary>Most recent battery telemetry snapshot.</summary>
         public BatteryTelemetry Telemetry { get; private set; }
 
@@ -74,12 +77,37 @@ namespace OmniHid.Core.Devices
         }
 
         private readonly object _lock = new object();
-        private readonly DeviceProfile _profile;
-        private readonly IProtocolHandler _protocol;
+        private DeviceProfile _profile;
+        private IProtocolHandler _protocol;
         private readonly IHidTransport _transport;
         private readonly List<HidDeviceInfo> _interfaces;
         private volatile HidDeviceInfo[] _cachedInterfacesSnapshot;
         private volatile List<HidDeviceInfo> _cachedInterfacesList;
+
+        /// <summary>
+        /// Dynamically updates the active profile and protocol handler when profiles are reloaded from disk.
+        /// </summary>
+        /// <param name="profile">Updated hardware profile.</param>
+        /// <param name="protocol">Updated protocol driver instance.</param>
+        public void UpdateProfile(DeviceProfile profile, IProtocolHandler protocol)
+        {
+            lock (_lock)
+            {
+                if (profile != null)
+                {
+                    _profile = profile;
+                    Name = profile.ModelName;
+                    Category = profile.Category;
+                    Capabilities = profile.Capabilities;
+                    ProtocolId = profile.ProtocolId;
+                    AssignedSlot = profile.AssignedSlot;
+                }
+                if (protocol != null)
+                {
+                    _protocol = protocol;
+                }
+            }
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Constructors

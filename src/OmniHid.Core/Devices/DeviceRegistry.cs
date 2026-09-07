@@ -21,6 +21,20 @@ namespace OmniHid.Core.Devices
         private System.Threading.Timer _hotReloadDebounceTimer;
 
         /// <summary>
+        /// Gets a snapshot list of all currently loaded device profiles.
+        /// </summary>
+        public IReadOnlyList<DeviceProfile> AllProfiles
+        {
+            get
+            {
+                lock (_syncLock)
+                {
+                    return _profiles.ToArray();
+                }
+            }
+        }
+
+        /// <summary>
         /// Occurs when device profiles have been reloaded from embedded resources or external files.
         /// </summary>
         public event Action ProfilesReloaded;
@@ -583,8 +597,13 @@ namespace OmniHid.Core.Devices
                         DeviceProfile profile = JsonProfileLoader.ParseProfile(content);
                         if (profile != null && profile.VendorId > 0)
                         {
+                            bool isUnverified = file.IndexOf(Path.DirectorySeparatorChar + "unverified" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                file.IndexOf("/unverified/", StringComparison.OrdinalIgnoreCase) >= 0;
+
                             profile.IsCustomProfile = true;
                             profile.IsRegisteredProfile = true;
+                            profile.IsVerified = !isUnverified;
+                            profile.FilePath = file;
                             Register(profile);
                         }
                     }
@@ -707,6 +726,50 @@ namespace OmniHid.Core.Devices
                 {
                     // Ignore directory access permission or path resolution errors
                 }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // Directory & Path Helpers
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Gets the standard shared user application data directory for peripheral profiles (%APPDATA%\OmniHid\devices).
+        /// </summary>
+        /// <returns>Absolute directory path, or null if AppData is unavailable.</returns>
+        public static string GetDefaultAppDataDevicesDirectory()
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            return !string.IsNullOrEmpty(appData) ? Path.Combine(appData, "OmniHid", "devices") : null;
+        }
+
+        /// <summary>
+        /// Ensures standard folder structure exists under the specified devices root directory.
+        /// Creates verified and unverified subdirectories for gamepads, headsets, keyboards, and mice.
+        /// </summary>
+        /// <param name="rootDir">Target devices root folder path.</param>
+        public static void EnsureDirectoryStructure(string rootDir)
+        {
+            if (string.IsNullOrEmpty(rootDir)) return;
+            try
+            {
+                string[] branches = { "verified", "unverified" };
+                string[] categories = { "gamepads", "headsets", "keyboards", "mice" };
+                foreach (var branch in branches)
+                {
+                    foreach (var cat in categories)
+                    {
+                        string path = Path.Combine(rootDir, branch, cat);
+                        if (!Directory.Exists(path))
+                        {
+                            Directory.CreateDirectory(path);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore directory creation permission errors
             }
         }
 

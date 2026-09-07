@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G915 TKL",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x408E", "0xC545" ],
+  "category": "Keyboard",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 40,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

@@ -333,6 +333,42 @@ namespace OmniHid.Core
         }
 
         /// <summary>
+        /// Synchronously updates device profiles Over-The-Air from the upstream GitHub repository,
+        /// writes them to disk, and reloads the active profile catalog.
+        /// </summary>
+        /// <returns>Result model detailing synchronization count and status.</returns>
+        public ProfileUpdateResult UpdateProfilesFromGitHub()
+        {
+            var result = ProfileUpdater.UpdateFromGitHub();
+            ReloadProfiles();
+            return result;
+        }
+
+        /// <summary>
+        /// Asynchronously updates device profiles Over-The-Air from the upstream GitHub repository on a worker thread,
+        /// reloads the active catalog, and invokes the completion callback.
+        /// </summary>
+        /// <param name="callback">Callback invoked upon completion with the synchronization result.</param>
+        public void UpdateProfilesFromGitHubAsync(Action<ProfileUpdateResult> callback)
+        {
+            ProfileUpdater.UpdateFromGitHubAsync(result =>
+            {
+                ReloadProfiles();
+                if (callback != null)
+                {
+                    try
+                    {
+                        callback(result);
+                    }
+                    catch (Exception)
+                    {
+                        // Suppress subscriber exceptions
+                    }
+                }
+            });
+        }
+
+        /// <summary>
         /// Synchronously scans the hardware bus, refreshes telemetry, and returns the list of active devices.
         /// </summary>
         /// <returns>List of discovered <see cref="IOmniDevice"/> instances.</returns>
@@ -701,6 +737,7 @@ namespace OmniHid.Core
                         else
                         {
                             device.AssignedSlot = group.Profile != null ? group.Profile.AssignedSlot : -1;
+                            device.UpdateProfile(group.Profile, group.Protocol);
                             device.UpdateInterfaces(group.Interfaces);
                         }
                     }

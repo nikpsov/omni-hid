@@ -1,0 +1,9 @@
+{
+  "model_name": "Sony DualShock 4",
+  "vendor_id": "0x054C",
+  "product_ids": [ "0x05C4", "0x09CC" ],
+  "category": "Gamepad",
+  "protocol": "sony-dualsense",
+  "battery_life_hours": 8,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

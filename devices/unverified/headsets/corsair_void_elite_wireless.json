@@ -1,0 +1,9 @@
+{
+  "model_name": "Corsair Void Elite Wireless",
+  "vendor_id": "0x1B1C",
+  "product_ids": [ "0x0A55", "0x0A51", "0x0A14", "0x0A17", "0x0A1A" ],
+  "category": "Headset",
+  "protocol": "corsair-headset",
+  "battery_life_hours": 16,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

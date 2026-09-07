@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Viper V2 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x00A5", "0x00A6" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 80,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

@@ -1,0 +1,9 @@
+{
+  "model_name": "SteelSeries Arctis Nova 7",
+  "vendor_id": "0x1038",
+  "product_ids": [ "0x2202", "0x2204", "0x2208" ],
+  "category": "Headset",
+  "protocol": "steelseries",
+  "battery_life_hours": 38,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

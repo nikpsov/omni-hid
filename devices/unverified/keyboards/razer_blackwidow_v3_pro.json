@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer BlackWidow V3 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x025A", "0x025C" ],
+  "category": "Keyboard",
+  "protocol": "razer",
+  "battery_life_hours": 192,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

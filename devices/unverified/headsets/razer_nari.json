@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Nari",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0074", "0x0075" ],
+  "category": "Headset",
+  "protocol": "razer",
+  "battery_life_hours": 24,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

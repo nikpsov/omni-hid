@@ -32,7 +32,7 @@ namespace OmniHid.Cli.Commands
             {
                 manager.DeviceConnected += dev =>
                 {
-                    string icon = dev.IsCustomProfile ? "📄 " : "";
+                    string icon = !dev.IsVerified ? "🧪 " : (dev.IsCustomProfile ? "📄 " : "");
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine("[{0:HH:mm:ss}] [+] DEVICE CONNECTED: {1}{2} ({3}) [{4}]",
                         DateTime.Now, icon, dev.Name, dev.Category, dev.ProtocolId);
@@ -41,7 +41,7 @@ namespace OmniHid.Cli.Commands
 
                 manager.DeviceDisconnected += dev =>
                 {
-                    string icon = dev.IsCustomProfile ? "📄 " : "";
+                    string icon = !dev.IsVerified ? "🧪 " : (dev.IsCustomProfile ? "📄 " : "");
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("[{0:HH:mm:ss}] [-] DEVICE DISCONNECTED: {1}{2} ({3})",
                         DateTime.Now, icon, dev.Name, dev.Category);
@@ -52,7 +52,7 @@ namespace OmniHid.Cli.Commands
                 {
                     if (!tel.IsAvailable) return;
                     Console.ForegroundColor = ConsoleColor.Cyan;
-                    string icon = dev.IsCustomProfile ? "📄 " : "";
+                    string icon = !dev.IsVerified ? "🧪 " : (dev.IsCustomProfile ? "📄 " : "");
                     string timeInfo = (tel.State == BatteryState.Discharging && !string.IsNullOrEmpty(tel.FormattedTimeRemaining))
                         ? " [" + tel.FormattedTimeRemaining + " remaining]"
                         : "";

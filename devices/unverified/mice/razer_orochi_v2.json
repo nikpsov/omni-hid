@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Orochi V2",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0094", "0x0095" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 950,
+  "capabilities": [ "BatteryLevel" ]
+}

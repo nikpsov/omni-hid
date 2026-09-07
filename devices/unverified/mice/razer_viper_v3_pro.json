@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Viper V3 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x00BF", "0x00C0" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 95,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech MX Master 3S",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x4082", "0xB023", "0xB034" ],
+  "category": "Mouse",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 500,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

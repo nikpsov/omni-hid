@@ -1,6 +1,6 @@
 ; OmniHID Inno Setup Script
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.2.0"
 #endif
 
 #define MyAppName "OmniHID"
@@ -39,7 +39,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\omni-hid.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\OmniHid.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\devices\*"; DestDir: "{app}\devices"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\devices\verified\*"; DestDir: "{userappdata}\OmniHid\devices\verified"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\devices\unverified\*"; DestDir: "{userappdata}\OmniHid\devices\unverified"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\README.ru.md"; DestDir: "{app}"; Flags: ignoreversion
 

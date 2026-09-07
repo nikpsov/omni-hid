@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer DeathAdder V2 Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x007C", "0x007D" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 70,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

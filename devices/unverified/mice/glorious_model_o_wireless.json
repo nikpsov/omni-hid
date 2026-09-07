@@ -1,0 +1,9 @@
+{
+  "model_name": "Glorious Model O Wireless",
+  "vendor_id": "0x258A",
+  "product_ids": [ "0x2011" ],
+  "category": "Mouse",
+  "protocol": "sinowealth",
+  "battery_life_hours": 71,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

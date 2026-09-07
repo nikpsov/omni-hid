@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer BlackWidow V3 Mini HyperSpeed",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0258", "0x0271", "0x02B9", "0x02BA" ],
+  "category": "Keyboard",
+  "protocol": "razer",
+  "battery_life_hours": 200,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

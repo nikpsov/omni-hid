@@ -1,0 +1,9 @@
+{
+  "model_name": "SteelSeries Rival 650 Wireless",
+  "vendor_id": "0x1038",
+  "product_ids": [ "0x172B" ],
+  "category": "Mouse",
+  "protocol": "steelseries",
+  "battery_life_hours": 24,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

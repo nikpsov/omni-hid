@@ -24,7 +24,7 @@ build.bat
 ```
 
 The script performs two steps in under 2 seconds:
-1. Embeds all declarative JSON profiles from `devices/` into `bin\OmniHid.Core.dll`.
+1. Compiles the core telemetry library into `bin\OmniHid.Core.dll`.
 2. Compiles the command-line utility into `bin\omni-hid.exe`.
 
 ### Option 2: Visual Studio / MSBuild
@@ -50,7 +50,7 @@ dotnet build OmniHid.sln -c Release
 Once compiled, run `omni-hid.exe` directly from `bin\`:
 
 ```cmd
-# Run interactive menu (options 0 to 9)
+# Run interactive menu (options 0 to U)
 bin\omni-hid.exe
 
 # Scan and display battery levels for all connected devices
@@ -63,7 +63,7 @@ bin\omni-hid.exe scan mouse
 bin\omni-hid.exe scan --all
 ```
 
-For full details on all 9 CLI subcommands and diagnostic tools, see the [CLI Reference](cli-reference.md).
+For full details on all CLI subcommands and diagnostic tools, see the [CLI Reference](cli-reference.md).
 
 ---
 

@@ -156,6 +156,11 @@ namespace OmniHid.Cli
                 case "--issue":
                     ExportCommand.Execute(filter);
                     break;
+                case "u":
+                case "update":
+                case "sync":
+                    UpdateCommand.Execute();
+                    break;
                 case "--help":
                 case "-h":
                 case "help":
@@ -200,9 +205,10 @@ namespace OmniHid.Cli
                 Console.WriteLine("    [7] 🎯 A-B Battery & Charger Calibration (Guided Plug/Unplug Diff Engine)");
                 Console.WriteLine("    [8] 📋 Export Device Diagnostics (.md for GitHub Issue / AI)");
                 Console.WriteLine("    [9] 📄 Scan Registered Devices Only (Verified .json Profiles)");
+                Console.WriteLine("    [U] 🌐 Update Device Profiles (OTA from GitHub)");
                 Console.WriteLine("    [0] 🚪 Exit");
                 Console.WriteLine();
-                Console.Write("  Enter choice [0-9] or command: ");
+                Console.Write("  Enter choice [0-9, U] or command: ");
 
                 string rawChoice = Console.ReadLine();
                 string choice = rawChoice != null ? rawChoice.Trim().ToLowerInvariant() : "";
@@ -281,6 +287,12 @@ namespace OmniHid.Cli
                         ExportCommand.Execute(null);
                         CliFormatter.SafeWaitForKey();
                         break;
+                    case "u":
+                    case "update":
+                    case "sync":
+                        UpdateCommand.Execute();
+                        CliFormatter.SafeWaitForKey();
+                        break;
                     case "0":
                     case "exit":
                     case "quit":
@@ -288,7 +300,7 @@ namespace OmniHid.Cli
                         return;
                     default:
                         Console.ForegroundColor = ConsoleColor.DarkYellow;
-                        Console.WriteLine("Unknown choice. Please enter a number from 0 to 9.");
+                        Console.WriteLine("Unknown choice. Please enter an option from the menu.");
                         Console.ResetColor();
                         CliFormatter.SafeWaitForKey();
                         break;

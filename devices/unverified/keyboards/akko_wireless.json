@@ -1,0 +1,12 @@
+{
+  "model_name": "Akko 2.4G Wireless Keyboard",
+  "vendor_id": "0x25A7",
+  "product_ids": [],
+  "category": "Keyboard",
+  "protocol": "royuan",
+  "battery_life_hours": 90,
+  "capabilities": [
+    "battery_percentage",
+    "charging_status"
+  ]
+}

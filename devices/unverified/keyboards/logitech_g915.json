@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G915 Lightspeed",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x407C", "0xC53E" ],
+  "category": "Keyboard",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 30,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

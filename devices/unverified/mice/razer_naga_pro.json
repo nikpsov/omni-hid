@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Naga Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x008F", "0x0090", "0x00A7", "0x00A8" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 150,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

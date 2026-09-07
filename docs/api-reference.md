@@ -62,7 +62,9 @@ public interface IOmniManager : IDisposable
 | `SetPollInterval(int pollIntervalMs)` | `void` | Updates the periodic telemetry polling frequency without triggering an immediate bus scan. |
 | `RefreshTelemetry()` | `void` | Triggers an immediate asynchronous telemetry refresh pass across existing devices without full bus re-enumeration. |
 | `ForceRefresh()` | `void` | Triggers an immediate asynchronous full bus scan and telemetry refresh across all devices. |
-| `ReloadProfiles()` | `void` | Reloads device profiles from embedded resources and external filesystem locations. |
+| `ReloadProfiles()` | `void` | Reloads device profiles from local and %APPDATA% external filesystem locations. |
+| `UpdateProfilesFromGitHub()` | `ProfileUpdateResult` | Synchronously downloads and extracts latest profiles OTA from GitHub and reloads catalog. |
+| `UpdateProfilesFromGitHubAsync(Action<ProfileUpdateResult>)` | `void` | Asynchronously downloads and extracts latest profiles OTA on a worker thread. |
 | `ProcessDeviceChangeNotification()` | `void` | Processes a PnP hardware change notification forwarded by a host application with its own Win32 message pump. |
 
 #### Events
@@ -100,6 +102,7 @@ public interface IOmniDevice
 | `IsWired` | `bool` | `true` if connected via direct USB cable rather than wireless receiver. |
 | `IsCustomProfile` | `bool` | `true` if instantiated from an external JSON profile. |
 | `IsRegisteredProfile` | `bool` | `true` if instantiated from a validated declarative JSON profile. |
+| `IsVerified` | `bool` | `true` if profile belongs to the verified repository category; `false` if unverified/experimental. |
 | `Telemetry` | `BatteryTelemetry` | Most recent cached battery telemetry snapshot. |
 | `Interfaces` | `IReadOnlyList<HidDeviceInfo>` | Aggregated physical Win32 HID interfaces belonging to this device. |
 
@@ -108,6 +111,7 @@ public interface IOmniDevice
 | Method | Return Type | Description |
 | :--- | :--- | :--- |
 | `RefreshTelemetry()` | `BatteryTelemetry` | Actively queries the physical hardware over HID to refresh telemetry. |
+| `UpdateProfile(DeviceProfile, IProtocolHandler)` | `void` | Dynamically updates the active profile and protocol handler when profiles reload from disk. |
 
 ---
 
@@ -249,10 +253,106 @@ public class OmniManager : IOmniManager
 | `SetPollInterval(int pollIntervalMs)` | `void` | Updates the periodic telemetry polling frequency without triggering an immediate bus scan. |
 | `RefreshTelemetry()` | `void` | Triggers an immediate asynchronous telemetry refresh pass across existing devices without full bus re-enumeration. |
 | `ForceRefresh()` | `void` | Triggers an immediate asynchronous full bus scan and telemetry refresh across all devices. |
-| `ReloadProfiles()` | `void` | Reloads device profiles from embedded resources and external filesystem locations. |
+| `ReloadProfiles()` | `void` | Reloads device profiles from local and %APPDATA% filesystem locations. |
+| `UpdateProfilesFromGitHub()` | `ProfileUpdateResult` | Synchronously updates profiles OTA from GitHub and reloads catalog. |
+| `UpdateProfilesFromGitHubAsync(Action<ProfileUpdateResult>)` | `void` | Asynchronously updates profiles OTA on a background worker thread. |
 | `ProcessDeviceChangeNotification()` | `void` | Processes a PnP hardware change notification forwarded by a host application with its own Win32 message pump. |
 | `ScanDevices()` | `List<IOmniDevice>` | Synchronously scans the hardware bus and returns active devices. |
 | `Dispose()` | `void` | Disposes background timers, file watchers, and native window hooks. |
+
+---
+
+## Namespace: OmniHid.Core.Devices
+
+### `DeviceRegistry`
+
+Thread-safe registry and hot-reload coordinator for declarative JSON peripheral profiles.
+
+```csharp
+public class DeviceRegistry
+```
+
+#### Properties
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `AllProfiles` | `IReadOnlyList<DeviceProfile>` | Thread-safe snapshot list of all loaded device profiles. |
+
+#### Methods
+
+| Method | Return Type | Description |
+| :--- | :--- | :--- |
+| `Register(DeviceProfile profile)` | `void` | Registers a profile into memory with O(1) VID/PID lookup. |
+| `Reload()` | `void` | Clears cache and reloads all external profiles from disk. |
+| `FindProfile(ushort vid, ushort pid, ...)` | `DeviceProfile` | Finds a matching profile or returns synthesized fallback. |
+| `GetDefaultAppDataDevicesDirectory()` | `string` | Static helper returning `%APPDATA%\OmniHid\devices\`. |
+
+---
+
+## Namespace: OmniHid.Core.Profiles
+
+### `DeviceProfile`
+
+Declarative hardware definition for a supported peripheral model.
+
+```csharp
+public class DeviceProfile
+```
+
+#### Key Properties
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `ModelName` | `string` | Product display name. |
+| `VendorId` | `ushort` | 16-bit USB Vendor ID. |
+| `ProductIds` | `ushort[]` | Array of supported Product IDs. |
+| `WiredProductIds` | `ushort[]` | Array of Product IDs designating wired cable mode for smart deduplication. |
+| `Category` | `DeviceCategory` | Peripheral type (`Mouse`, `Keyboard`, `Headset`, `Gamepad`). |
+| `ProtocolId` | `string` | Telemetry driver identifier. |
+| `IsVerified` | `bool` | `true` if loaded from `verified/` directory; `false` if experimental. |
+| `FilePath` | `string` | Absolute filesystem path from which profile was loaded. |
+
+---
+
+### `ProfileUpdater`
+
+Provides zero-dependency Over-The-Air (OTA) downloading and synchronization of declarative peripheral profiles directly from GitHub.
+
+```csharp
+public static class ProfileUpdater
+```
+
+#### Constants
+
+| Constant | Type | Description |
+| :--- | :--- | :--- |
+| `DefaultArchiveUrl` | `string` | `https://raw.githubusercontent.com/nikpsov/omni-hid/catalog/devices.zip` |
+| `FallbackArchiveUrl` | `string` | `https://github.com/nikpsov/omni-hid/archive/refs/heads/main.zip` |
+
+#### Methods
+
+| Method | Return Type | Description |
+| :--- | :--- | :--- |
+| `UpdateFromGitHub(targetDevicesDir = null, archiveUrl = null)` | `ProfileUpdateResult` | Synchronously connects to GitHub, downloads latest profiles, extracts them to disk, and returns synchronization result. |
+| `UpdateFromGitHubAsync(callback, targetDevicesDir = null, archiveUrl = null)` | `void` | Asynchronously executes synchronization on a thread pool worker. |
+
+---
+
+### `ProfileUpdateResult`
+
+Encapsulates the execution result of an OTA profile synchronization pass.
+
+```csharp
+public class ProfileUpdateResult
+{
+    public bool Success { get; set; }
+    public bool IsOfflineFallback { get; set; }
+    public int UpdatedCount { get; set; }
+    public string TargetDirectory { get; set; }
+    public string SourceUrl { get; set; }
+    public string ErrorMessage { get; set; }
+}
+```
 
 ---
 

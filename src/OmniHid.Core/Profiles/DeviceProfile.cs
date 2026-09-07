@@ -63,6 +63,16 @@ namespace OmniHid.Core.Profiles
         public bool IsRegisteredProfile { get; set; }
 
         /// <summary>
+        /// Gets or sets a value indicating whether this profile belongs to verified repository profiles.
+        /// </summary>
+        public bool IsVerified { get; set; }
+
+        /// <summary>
+        /// Gets or sets the absolute or relative file system path from which this profile was parsed.
+        /// </summary>
+        public string FilePath { get; set; }
+
+        /// <summary>
         /// Gets or sets the target HID Usage Page required for configuration commands (e.g. 0xFF02 for Areson mice).
         /// When specified, the interface matching this Usage Page is prioritized during device grouping.
         /// </summary>
@@ -95,6 +105,7 @@ namespace OmniHid.Core.Profiles
             AssignedSlot = -1;
             IsCustomProfile = false;
             IsRegisteredProfile = false;
+            IsVerified = true;
             TargetUsagePage = 0;
             TargetUsage = 0;
         }
@@ -118,6 +129,8 @@ namespace OmniHid.Core.Profiles
                 AssignedSlot = this.AssignedSlot,
                 IsCustomProfile = this.IsCustomProfile,
                 IsRegisteredProfile = this.IsRegisteredProfile,
+                IsVerified = this.IsVerified,
+                FilePath = this.FilePath,
                 TargetUsagePage = this.TargetUsagePage,
                 TargetUsage = this.TargetUsage
             };

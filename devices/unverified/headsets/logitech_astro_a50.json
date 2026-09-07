@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech Astro A50 X",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x0AE5" ],
+  "category": "Headset",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 24,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

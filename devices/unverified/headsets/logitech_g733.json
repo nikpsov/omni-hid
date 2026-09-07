@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G733 Lightspeed",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x0AB0", "0x0AB1" ],
+  "category": "Headset",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 29,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

@@ -1,0 +1,9 @@
+{
+  "model_name": "SteelSeries Arctis 7+",
+  "vendor_id": "0x1038",
+  "product_ids": [ "0x12B3", "0x12B4", "0x220E" ],
+  "category": "Headset",
+  "protocol": "steelseries",
+  "battery_life_hours": 30,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

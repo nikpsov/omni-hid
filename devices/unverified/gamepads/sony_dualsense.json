@@ -1,0 +1,9 @@
+{
+  "model_name": "Sony DualSense Wireless Controller",
+  "vendor_id": "0x054C",
+  "product_ids": [ "0x0CE6" ],
+  "category": "Gamepad",
+  "protocol": "sony-dualsense",
+  "battery_life_hours": 12,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

@@ -121,3 +121,19 @@ In telemetry-driven applications, UI frameworks or background loops frequently q
 3. **Reusable Collection Pooling:** Full bus scans reuse persistent collections and pooled group structures (`_byPhysicalDevice`, `_ifaceListPool`, `_groupPool`, `_logicalGroups`, `_activeWiredModels`), preventing heap allocations during recurring scan cycles.
 4. **Thread-Static Overlapped I/O Context:** `Win32HidTransport` caches unmanaged overlapped structures and manual reset events via `[ThreadStatic] OverlappedContext`, eliminating repeated `Marshal.AllocHGlobal` and `Marshal.FreeHGlobal` overhead during HID report exchanges.
 5. **Combined Endpoint Handles:** When read and write paths match (`samePath`), transfers reuse a single bidirectional file handle (`GENERIC_READ | GENERIC_WRITE`) via native `HidD_SetFeature`/`HidD_SetOutputReport` before falling back to dedicated pipes.
+
+---
+
+## 6. Decoupled Profile Catalog & Over-The-Air (OTA) Architecture
+
+OmniHID decouples device profile definitions entirely from compiled binaries:
+
+1. **Zero Embedded JSON:** `OmniHid.Core.dll` contains no embedded profile resources. All definitions are loaded dynamically from `%APPDATA%\OmniHid\devices\` (shared user catalog) or `./devices/` (portable installations).
+2. **Two-Tier Quality Classification:**
+   - `verified/`: Production-tested repository profiles (`IsVerified = true`).
+   - `unverified/`: Experimental and community-submitted profiles (`IsVerified = false`). Moving a profile from `unverified/` to `verified/` is a pure filesystem/git relocation with zero code changes.
+3. **Over-The-Air (OTA) Sync via GitHub Actions:**
+   - Upstream GitHub Actions workflow packages the `devices/` folder into a clean ~5–8 KB `devices.zip` deployed to a dedicated `catalog` branch on every commit to `main`.
+   - `ProfileUpdater` downloads this archive directly from the GitHub CDN and extracts profiles into the active target directory.
+   - Built-in transparent fallback: if the dedicated catalog branch is unavailable (e.g. initial setup), the client automatically falls back to the full repository archive.
+4. **Dynamic In-Place Hardware Profile Swapping:** When profiles reload from disk or OTA update, `OmniDevice.UpdateProfile(...)` dynamically updates active peripheral instances in memory without requiring USB unplugging or application restarts.

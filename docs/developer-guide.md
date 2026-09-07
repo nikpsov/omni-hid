@@ -37,8 +37,8 @@ OmniHID decouples low-level Windows HID communication from peripheral telemetry 
               │                           │
 ┌─────────────▼──────────────┐ ┌──────────▼──────────────┐
 │       DeviceRegistry       │ │    IProtocolHandler     │
-│  - Embedded JSON profiles  │ │  - logitech-hidpp / cent │
-│  - External JSON profiles  │ │  - areson / royuan / ...│
+│  - Verified/unverified cat.│ │  - logitech-hidpp / cent │
+│  - Shared/portable catalogs│ │  - areson / royuan / ...│
 │  - Hot-reload file watcher │ │  - razer / steelseries  │
 └────────────────────────────┘ └──────────┬──────────────┘
                                           │
@@ -171,7 +171,8 @@ OmniHID provides distinct methods depending on the level of refresh needed:
 
 - **`RefreshTelemetry()`**: Triggers an asynchronous telemetry query across existing active devices without re-enumerating the USB bus. It operates along the zero-allocation `FastRefreshTelemetry()` pipeline when no hardware changes have occurred, making it ideal for unthrottling after fullscreen games or window wakeups.
 - **`ForceRefresh()`**: Triggers a complete hardware bus enumeration and logical device reconciliation pass across all devices.
-- **`ReloadProfiles()`**: Clears and reloads declarative JSON profiles from embedded assembly resources and external filesystem directories.
+- **`ReloadProfiles()`**: Clears and reloads declarative JSON profiles from filesystem catalogs (`%APPDATA%\OmniHid\devices\` or local portable paths), updating all active devices with fresh profiles in-place.
+- **`UpdateProfilesFromGitHubAsync()`**: Downloads and extracts the latest profile catalog (~5–8 KB ZIP) from upstream GitHub into `%APPDATA%\OmniHid\devices\`, hot-reloading active profiles in-place without app restart.
 
 ### On-Demand Querying
 

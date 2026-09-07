@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech G535 Lightspeed",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x0ABA", "0x0ABB" ],
+  "category": "Headset",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 33,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

@@ -1,0 +1,9 @@
+{
+  "model_name": "Logitech MX Keys",
+  "vendor_id": "0x046D",
+  "product_ids": [ "0x408A", "0xB35B" ],
+  "category": "Keyboard",
+  "protocol": "logitech-hidpp",
+  "battery_life_hours": 240,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

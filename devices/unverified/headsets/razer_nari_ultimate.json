@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Nari Ultimate",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0076", "0x0077" ],
+  "category": "Headset",
+  "protocol": "razer",
+  "battery_life_hours": 20,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

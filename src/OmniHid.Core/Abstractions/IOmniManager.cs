@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OmniHid.Core.Profiles;
 
 namespace OmniHid.Core.Abstractions
 {
@@ -65,6 +66,20 @@ namespace OmniHid.Core.Abstractions
         /// Reloads device profiles from embedded resources and external filesystem locations.
         /// </summary>
         void ReloadProfiles();
+
+        /// <summary>
+        /// Synchronously updates device profiles Over-The-Air from the upstream GitHub repository
+        /// and reloads the active profile catalog.
+        /// </summary>
+        /// <returns>Result model detailing synchronization count and status.</returns>
+        ProfileUpdateResult UpdateProfilesFromGitHub();
+
+        /// <summary>
+        /// Asynchronously updates device profiles Over-The-Air from the upstream GitHub repository on a worker thread,
+        /// reloads the active catalog, and invokes the completion callback.
+        /// </summary>
+        /// <param name="callback">Callback invoked with update result.</param>
+        void UpdateProfilesFromGitHubAsync(Action<ProfileUpdateResult> callback);
 
         /// <summary>
         /// Updates the periodic background telemetry polling frequency without triggering an immediate bus scan.

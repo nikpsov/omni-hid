@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Cobra Pro",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x00AF", "0x00B0" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 100,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}

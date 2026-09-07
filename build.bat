@@ -18,13 +18,10 @@ if "%CSC_PATH%"=="" (
 if not exist "bin" mkdir bin
 
 echo.
-echo [1/2] Compiling OmniHid.Core.dll (embedding device profiles)...
-set "RESOURCES="
-for /r "devices" %%f in (*.json) do (
-    set "RESOURCES=!RESOURCES! /resource:"%%f",%%~nxf"
-)
+echo [1/2] Compiling OmniHid.Core.dll...
 "%CSC_PATH%" /nologo /target:library /optimize+ /out:bin\OmniHid.Core.dll ^
-    /recurse:src\OmniHid.Core\*.cs !RESOURCES!
+    /reference:System.IO.Compression.dll,System.IO.Compression.FileSystem.dll ^
+    /recurse:src\OmniHid.Core\*.cs
 
 if errorlevel 1 (
     echo [ERROR] OmniHid.Core compilation failed.
@@ -43,7 +40,13 @@ if errorlevel 1 (
 )
 
 echo.
+echo Deploying local devices directory to bin\devices...
+if not exist "bin\devices" mkdir "bin\devices"
+xcopy /s /e /y /i "devices" "bin\devices" >nul
+
+echo.
 echo [SUCCESS] OmniHID build succeeded!
 echo   - bin\OmniHid.Core.dll
 echo   - bin\omni-hid.exe
+echo   - bin\devices\ (verified and unverified)
 exit /b 0

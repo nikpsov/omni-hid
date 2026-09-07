@@ -1,18 +1,54 @@
-# Device Profiles & Hot Reload
+# Device Profiles, Catalog Organization & OTA Sync
 
-OmniHID uses declarative JSON profiles (supporting JSONC single-line comments `//`) to define peripheral metadata, protocol drivers, endpoint routing, and dual-mode connectivity pairings.
+OmniHID uses declarative JSON profiles (supporting JSONC single-line comments `//`) to define peripheral metadata, protocol drivers, endpoint routing, and dual-mode connectivity pairings without recompilation.
 
 ---
 
-## Profile Locations & Discovery Order
+## Catalog Structure: `verified` vs `unverified`
 
-`DeviceRegistry` scans the following locations:
+The profile catalog is partitioned into two primary groups across all peripheral categories:
 
-1. **External AppData:** `%APPDATA%\OmniHid\devices\**\*.json` (User-created or downloaded profiles).
-2. **Local Working Directory:** `./devices/**/*.json` or `<AppDomain.BaseDirectory>\devices\**\*.json`.
-3. **Embedded Assembly Resources:** Profiles bundled inside `OmniHid.Core.dll` at compile time.
+```
+devices/
+├── verified/                   # Production-grade tested repository profiles
+│   ├── gamepads/               # Tested controller definitions (e.g. Xbox)
+│   ├── headsets/               # Tested headset definitions (e.g. Logitech G PRO X 2)
+│   ├── keyboards/              # Tested keyboard definitions
+│   └── mice/                   # Tested mouse definitions (e.g. ARDOR Gaming Prime X)
+└── unverified/                 # Experimental, custom, or community-contributed profiles
+    ├── gamepads/               # Sony DualSense, Xbox Elite, 360, etc.
+    ├── headsets/               # Razer, SteelSeries, Corsair, HyperX, etc.
+    ├── keyboards/              # Akko, Epomaker, Razer, Logitech G, etc.
+    └── mice/                   # Lamzu, Pulsar, Razer, Glorious, Logitech, etc.
+```
 
-> **Priority:** External profiles take precedence over embedded defaults. If you place a custom profile for an existing VID/PID in `%APPDATA%\OmniHid\devices\`, OmniHID will override the built-in profile without modifying source code or rebuilding binaries.
+### Profile Status Rules
+- **`verified/`**: Loaded with `IsVerified = true`. Discovered devices are treated as fully certified hardware models.
+- **`unverified/`**: Loaded with `IsVerified = false`. Marked with the `🧪` icon in CLI output and an `Unverified` golden badge in GUI/Flyout windows.
+- **Promotion Workflow**: To promote an experimental profile from `unverified` to `verified`, the developer simply moves the file into `devices/verified/<category>/` in git. No code modifications or profile edits are required.
+
+---
+
+## Profile Discovery Order
+
+`DeviceRegistry` scans disk directories in the following priority order:
+
+1. **Shared User AppData:** `%APPDATA%\OmniHid\devices\` (Shared profile catalog for both CLI and GUI frontend).
+2. **Local Portable Directory:** `<AppDomain.BaseDirectory>\devices\` or `./devices/` (Enables standalone portable installations).
+3. **Development Parent Tree:** Scans up to 3 parent levels (`..\devices`, `..\..\devices`) for seamless developer workflows inside the repository.
+
+> **Disk-First Architecture:** As of v0.2.0, `OmniHid.Core.dll` contains **zero embedded JSON resources**. The catalog is purely external and disk/network based, allowing instant updates and additions without recompiling or rebuilding binaries.
+
+---
+
+## Over-The-Air (OTA) Catalog Updates
+
+OmniHID provides zero-dependency Over-The-Air (OTA) synchronization directly from the upstream GitHub repository:
+
+- **Clean Payload (~5–8 KB):** GitHub Actions automatically packages the `devices/` directory tree into `devices.zip` upon every commit to `main`, publishing it to the dedicated `catalog` branch.
+- **CLI Sync:** Run `omni-hid update` (or `omni-hid sync`) to pull the latest catalog.
+- **GUI Sync:** Right-click the taskbar widget and select **«Update Profiles from GitHub»**.
+- **Offline Resilient:** If network is unavailable or GitHub is unreachable, local profiles remain completely intact and the engine automatically falls back to local disk definitions.
 
 ---
 
@@ -20,8 +56,8 @@ OmniHID uses declarative JSON profiles (supporting JSONC single-line comments `/
 
 OmniHID monitors external profile directories using native .NET `FileSystemWatcher` instances:
 - **Instant Detection:** When you add, edit, or delete a `.json` profile in any watched folder, a 300 ms debounced file event triggers `DeviceRegistry.Reload()`.
-- **Automatic Rescan:** `OmniManager` automatically initiates a bus rescan and updates `ConnectedDevices`.
-- **Visual Tagging:** Custom/external profiles are marked with the `📄` icon in CLI tables and have `IOmniDevice.IsCustomProfile == true` in the API.
+- **Automatic Device Rescan:** `OmniManager` automatically updates all active device instances in-place via `IOmniDevice.UpdateProfile(...)`.
+- **Visual Tagging:** Custom/external profiles are marked with the `📄` icon in CLI tables and have `IOmniDevice.IsCustomProfile == true`.
 
 ---
 
@@ -113,7 +149,7 @@ omni-hid debug
 OmniHID will identify the microcontroller family (e.g. *CompX / Areson architecture*).
 
 ### 3. Create the JSON File
-Create a new file in `devices/mice/` (or `%APPDATA%\OmniHid\devices\mice\`):
+Create a new file in `devices/unverified/mice/` (or `%APPDATA%\OmniHid\devices\unverified\mice\`):
 ```json
 {
   "model_name": "My Custom Wireless Mouse",
@@ -131,16 +167,4 @@ Run:
 ```cmd
 omni-hid scan
 ```
-Your device will immediately appear in the table with the `📄` icon and live battery level.
-
----
-
-## Embedding Profiles into `OmniHid.Core.dll`
-
-When building with `build.bat`, all profiles inside the `devices/` directory tree are automatically compiled into `OmniHid.Core.dll` as embedded resources:
-
-```cmd
-build.bat
-```
-
-This ensures the resulting binary is completely portable with zero external file requirements.
+Your device will immediately appear in the table with the `🧪` (unverified) or `📄` (custom) icon and live battery level.

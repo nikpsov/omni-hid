@@ -1,0 +1,9 @@
+{
+  "model_name": "Razer Basilisk Ultimate",
+  "vendor_id": "0x1532",
+  "product_ids": [ "0x0086", "0x0088" ],
+  "category": "Mouse",
+  "protocol": "razer",
+  "battery_life_hours": 100,
+  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
+}
