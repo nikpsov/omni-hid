@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using OmniHid.Core.Abstractions;
 using OmniHid.Core.Profiles;
 using OmniHid.Core.Transport;
@@ -15,23 +16,30 @@ namespace OmniHid.Core.Protocols
     /// - Command Packet: Feature Report 0x04 with payload [0x04, 0x11, ...].
     /// - Response Packet: Byte 2 (or 3) contains battery percentage (0..100), Byte 4 indicates charging status (1 or 2 = charging).
     /// </remarks>
-    public class SinoWealthProtocol : IProtocolHandler
+    public class SinoWealthProtocol : BaseProtocolHandler
     {
+        // ═══════════════════════════════════════════════════════════════════════
+        // Protocol Constants
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private const byte REPORT_ID_FEATURE        = 0x04;
+        private const byte CMD_QUERY_BATTERY        = 0x11;
+        private const int MIN_REPORT_LENGTH         = 8;
+        private const int OFFSET_BATTERY_PRIMARY    = 2;
+        private const int OFFSET_BATTERY_SECONDARY  = 3;
+        private const int OFFSET_CHARGING_STATUS    = 4;
+        private const int DELAY_FEATURE_MS          = 10;
+        private const int TIMEOUT_EXCHANGE_MS       = 250;
+
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Properties
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "sinowealth"; } }
+        public override string ProtocolId { get { return "sinowealth"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "SinoWealth Wireless Protocol"; } }
-
-        /// <summary>
-        /// Gets a value indicating whether this protocol can query telemetry when no Windows HID interface handles exist.
-        /// SinoWealth devices require direct communication via HID Feature reports.
-        /// </summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "SinoWealth Wireless Protocol"; } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Telemetry Query Implementation
@@ -44,103 +52,59 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this mouse.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Device not found");
 
             // Check Windows PnP battery property cache first
-            foreach (var iface in interfaces)
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                int pnpLevel = transport.GetPnpBatteryLevel(iface.DevicePath);
-                if (pnpLevel >= 0 && pnpLevel <= 100)
-                {
-                    return BatteryTelemetry.Online(pnpLevel, BatteryState.Discharging);
-                }
+                return pnpTelemetry;
             }
 
-            // Rank candidate configuration endpoints
-            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile);
+            // Rank candidate configuration endpoints (at least 8 bytes Feature report)
+            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile, minFeatureLen: MIN_REPORT_LENGTH);
 
             foreach (var targetDev in candidates)
             {
                 // Command buffer: Report ID 0x04, Command 0x11
-                int repLen = Math.Max(8, (int)targetDev.FeatureReportByteLength);
+                int repLen = Math.Max(MIN_REPORT_LENGTH, (int)targetDev.FeatureReportByteLength);
                 byte[] cmd = new byte[repLen];
-                cmd[0] = 0x04;
-                cmd[1] = 0x11;
+                cmd[0] = REPORT_ID_FEATURE;
+                cmd[1] = CMD_QUERY_BATTERY;
 
                 byte[] resp = new byte[repLen];
                 bool ok = false;
 
-                // Transmit query feature command first, then read response report
+                // Transmit query feature command first, then read response report with brief delay
                 if (transport.SetFeatureReport(targetDev.DevicePath, cmd))
                 {
-                    System.Threading.Thread.Sleep(15);
-                    ok = transport.GetFeatureReport(targetDev.DevicePath, 0x04, resp);
+                    Thread.Sleep(DELAY_FEATURE_MS);
+                    ok = transport.GetFeatureReport(targetDev.DevicePath, REPORT_ID_FEATURE, resp);
                 }
 
                 if (!ok)
                 {
-                    ok = transport.Exchange(targetDev.DevicePath, cmd, targetDev.DevicePath, resp, 300);
+                    ok = transport.Exchange(targetDev.DevicePath, cmd, targetDev.DevicePath, resp, TIMEOUT_EXCHANGE_MS);
                 }
 
-                if (ok && (resp[1] != 0 || resp[2] != 0 || resp[3] != 0))
+                if (ok && (resp[1] != 0 || resp[OFFSET_BATTERY_PRIMARY] != 0 || resp[OFFSET_BATTERY_SECONDARY] != 0))
                 {
                     // Byte 2 or 3: Battery percentage
-                    int level = resp[2] > 0 ? resp[2] : resp[3];
+                    int level = resp[OFFSET_BATTERY_PRIMARY] > 0 ? resp[OFFSET_BATTERY_PRIMARY] : resp[OFFSET_BATTERY_SECONDARY];
                     if (level > 100) level = 100;
 
                     // Byte 4: Charging flag (1 or 2 = Charging)
-                    bool isCharging = (resp[4] == 1 || resp[4] == 2);
+                    byte chgByte = resp[OFFSET_CHARGING_STATUS];
+                    bool isCharging = (chgByte == 1 || chgByte == 2);
 
                     return BatteryTelemetry.Online(level, isCharging ? BatteryState.Charging : BatteryState.Discharging);
                 }
             }
 
             return BatteryTelemetry.Offline("Device offline or sleeping");
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // Interface Selection Helpers
-        // ═══════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Ranks HID interfaces prioritizing profiles, feature report capacity, and vendor collections.
-        /// </summary>
-        private static List<HidDeviceInfo> GetCandidateInterfaces(List<HidDeviceInfo> interfaces, DeviceProfile profile)
-        {
-            List<HidDeviceInfo> candidates = new List<HidDeviceInfo>();
-
-            // Priority 0: Explicit target usage page from profile
-            if (profile != null && profile.TargetUsagePage != 0)
-            {
-                foreach (var iface in interfaces)
-                {
-                    if (iface.UsagePage == profile.TargetUsagePage &&
-                        (profile.TargetUsage == 0 || iface.Usage == profile.TargetUsage))
-                    {
-                        candidates.Add(iface);
-                    }
-                }
-            }
-
-            // Priority 1: Vendor collections with feature report capability
-            foreach (var iface in interfaces)
-            {
-                if ((iface.UsagePage >= 0xFF00 || iface.FeatureReportByteLength >= 8) && !candidates.Contains(iface))
-                {
-                    candidates.Add(iface);
-                }
-            }
-
-            // Priority 2: Fallback to all interfaces
-            if (candidates.Count == 0)
-            {
-                candidates.AddRange(interfaces);
-            }
-
-            return candidates;
         }
     }
 }

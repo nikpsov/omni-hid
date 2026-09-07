@@ -19,33 +19,31 @@ namespace OmniHid.Core.Protocols
     /// - Response Packet: 65 bytes via HidD_GetFeature, where byte offsets contain battery percentage and online/charging flags.
     /// - Fallback: Vendor telemetry endpoint (Usage 0xFFFF:0x0001) and Areson 2.4G frame query.
     /// </remarks>
-    public class RoyuanProtocol : IProtocolHandler
+    public class RoyuanProtocol : BaseProtocolHandler
     {
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Constants (from ROYUAN QMKIot / YiChip Specification)
         // ═══════════════════════════════════════════════════════════════════════
 
-        private const byte FEA_CMD_GET_REV = 0x80;      // 128: Firmware Version Query
-        private const byte FEA_CMD_GET_REPORT = 0x81;   // 129: Polling Rate Query
-        private const byte FEA_CMD_GET_PROFILE = 0x82;  // 130: Current Profile Query
-        private const byte FEA_CMD_GET_BATTERY = 0x83;  // 131: Battery & Status Query
-        private const byte FEA_CMD_GET_INFOR = 0x8F;    // 143: Hardware Information Query
+        private const byte FEA_CMD_GET_REV      = 0x80;  // 128: Firmware Version Query
+        private const byte FEA_CMD_GET_REPORT   = 0x81;  // 129: Polling Rate Query
+        private const byte FEA_CMD_GET_PROFILE  = 0x82;  // 130: Current Profile Query
+        private const byte FEA_CMD_GET_BATTERY  = 0x83;  // 131: Battery & Status Query
+        private const byte FEA_CMD_GET_INFOR    = 0x8F;  // 143: Hardware Information Query
+
+        private const int REPORT_SIZE_PRIMARY   = 65;
+        private const int DELAY_FEATURE_MS      = 8;
+        private const int TIMEOUT_VENDOR_IN_MS  = 100;
 
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Properties
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "royuan"; } }
+        public override string ProtocolId { get { return "royuan"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "ROYUAN / YiChip Wireless Protocol"; } }
-
-        /// <summary>
-        /// Gets a value indicating whether this protocol can query telemetry when no Windows HID interface handles exist.
-        /// ROYUAN / YiChip keyboards require direct communication via HID Feature reports.
-        /// </summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "ROYUAN / YiChip Wireless Protocol"; } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Telemetry Query Implementation
@@ -58,35 +56,32 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces aggregated under this keyboard.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Device not found");
 
             // 1. Check Windows PnP Battery Level first
-            foreach (var iface in interfaces)
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                int pnpLevel = transport.GetPnpBatteryLevel(iface.DevicePath);
-                if (pnpLevel >= 0 && pnpLevel <= 100)
-                {
-                    return BatteryTelemetry.Online(pnpLevel, BatteryState.Discharging);
-                }
+                return pnpTelemetry;
             }
 
             // 2. Locate the primary Feature Report endpoint (FeatLen >= 65, e.g. Usage 0x0001:0x0006)
             HidDeviceInfo featEndpoint = null;
-            foreach (var iface in interfaces)
+            for (int i = 0; i < interfaces.Count; i++)
             {
-                if (iface.FeatureReportByteLength >= 65)
+                if (interfaces[i].FeatureReportByteLength >= REPORT_SIZE_PRIMARY)
                 {
-                    featEndpoint = iface;
+                    featEndpoint = interfaces[i];
                     break;
                 }
             }
 
             if (featEndpoint != null)
             {
-                int bufLen = Math.Max(65, (int)featEndpoint.FeatureReportByteLength);
+                int bufLen = Math.Max(REPORT_SIZE_PRIMARY, (int)featEndpoint.FeatureReportByteLength);
 
                 // Strategy A: Unnumbered 65-byte Feature Exchange ([0x00, 0x83, 0x00, ...])
                 byte[] sendUnnumbered = new byte[bufLen];
@@ -95,7 +90,7 @@ namespace OmniHid.Core.Protocols
 
                 if (transport.SetFeatureReport(featEndpoint.DevicePath, sendUnnumbered))
                 {
-                    Thread.Sleep(20);
+                    Thread.Sleep(DELAY_FEATURE_MS);
 
                     byte[] respUnnumbered = new byte[bufLen];
                     respUnnumbered[0] = 0x00;
@@ -113,7 +108,7 @@ namespace OmniHid.Core.Protocols
 
                 if (transport.SetFeatureReport(featEndpoint.DevicePath, sendNumbered))
                 {
-                    Thread.Sleep(20);
+                    Thread.Sleep(DELAY_FEATURE_MS);
 
                     byte[] respNumbered = new byte[bufLen];
                     respNumbered[0] = FEA_CMD_GET_BATTERY;
@@ -127,12 +122,13 @@ namespace OmniHid.Core.Protocols
             }
 
             // 3. Strategy C: Read spontaneous vendor input report from endpoint [2] (Usage 0xFFFF:0x0001)
-            foreach (var iface in interfaces)
+            for (int i = 0; i < interfaces.Count; i++)
             {
+                var iface = interfaces[i];
                 if ((iface.UsagePage == 0xFFFF || iface.UsagePage >= 0xFF00) && iface.InputReportByteLength > 0)
                 {
                     byte[] vIn = new byte[Math.Max(64, (int)iface.InputReportByteLength)];
-                    if (transport.ReadInputReport(iface.DevicePath, vIn, 150))
+                    if (transport.ReadInputReport(iface.DevicePath, vIn, TIMEOUT_VENDOR_IN_MS))
                     {
                         BatteryTelemetry parsed = ParseRoyuanVendorInput(vIn);
                         if (parsed != null && parsed.IsAvailable)
@@ -142,8 +138,9 @@ namespace OmniHid.Core.Protocols
             }
 
             // 4. Strategy D: Check Input Report 0x02 on System Control interface (mi_01&col02)
-            foreach (var iface in interfaces)
+            for (int i = 0; i < interfaces.Count; i++)
             {
+                var iface = interfaces[i];
                 if (iface.UsagePage == 0x0001 && iface.Usage == 0x0080)
                 {
                     byte[] inRep = new byte[64];

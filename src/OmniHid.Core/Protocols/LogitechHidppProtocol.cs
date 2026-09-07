@@ -16,22 +16,24 @@ namespace OmniHid.Core.Protocols
     /// - Dynamic Feature Discovery:
     ///   Queries Root Feature (0x0000, function 0x00 GetFeature) to dynamically locate the feature index
     ///   for Feature 0x1000 (Battery Level Status) or Feature 0x1004 (Unified Battery Voltage).
+    /// - Charging State Specification:
+    ///   - Feature 0x1000 (Battery Level Status):
+    ///     Byte 6 (chargingStatus): 0x00 = Discharging, 0x01 = Recharging, 0x02 = Almost Full, 0x03 = Charge Complete, 0x04 = Slow.
+    ///   - Feature 0x1004 (Unified Battery Voltage):
+    ///     Byte 6 (statusByte): 0x01 = Idle / Discharging, 0x03 = Actively Charging.
     /// - Caches discovered feature indices per device interface path for zero-overhead subsequent queries.
     /// </remarks>
-    public class LogitechHidppProtocol : IProtocolHandler
+    public class LogitechHidppProtocol : BaseProtocolHandler
     {
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Constants
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "logitech-hidpp"; } }
+        public override string ProtocolId { get { return "logitech-hidpp"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Logitech HID++ 2.0 Protocol"; } }
-
-        /// <summary>Gets a value indicating whether this protocol can query telemetry without HID interfaces.</summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "Logitech HID++ 2.0 Protocol"; } }
 
         private const byte REPORT_ID_LONG = 0x11;
         private const byte DEV_DEFAULT    = 0x01;
@@ -66,38 +68,21 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this device.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Device not found");
 
-            // Look for vendor configuration collection (UsagePage >= 0xFF00) or report length >= 20
-            HidDeviceInfo targetDev = null;
-            if (profile != null && profile.TargetUsagePage != 0)
+            // Check Windows PnP battery property cache first
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                for (int i = 0; i < interfaces.Count; i++)
-                {
-                    var d = interfaces[i];
-                    if (d.UsagePage == profile.TargetUsagePage && (profile.TargetUsage == 0 || d.Usage == profile.TargetUsage))
-                    {
-                        targetDev = d;
-                        break;
-                    }
-                }
+                return pnpTelemetry;
             }
 
-            if (targetDev == null)
-            {
-                foreach (var dev in interfaces)
-                {
-                    if (dev.UsagePage >= 0xFF00 || dev.OutputReportByteLength >= 20 || dev.FeatureReportByteLength >= 20)
-                    {
-                        targetDev = dev;
-                        break;
-                    }
-                }
-            }
-            if (targetDev == null) targetDev = interfaces[0];
+            // Look for vendor configuration collection (UsagePage >= 0xFF00) or report length >= 20
+            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile, minOutputLen: 20, minFeatureLen: 20);
+            HidDeviceInfo targetDev = candidates.Count > 0 ? candidates[0] : interfaces[0];
 
             string devPath = targetDev.DevicePath;
 
@@ -215,22 +200,43 @@ namespace OmniHid.Core.Protocols
 
             if (entry.FeatureId == FEATURE_BATTERY_STATUS)
             {
+                // Feature 0x1000:
                 // Byte 4: Level percentage (0..100)
-                // Byte 6: Charging status (0x01 = Discharging, 0x02 = Charging, 0x04 = Almost full)
+                // Byte 6: Charging status (from Logitech HID++ 2.0 / libratbag):
+                //   0x00 = Discharging
+                //   0x01 = Recharging (Charging)
+                //   0x02 = Charge in final stage (Almost full)
+                //   0x03 = Charge complete (Full)
+                //   0x04 = Recharging below optimal speed (Slow charging)
                 int level = resp[4];
                 byte chargeStatus = resp[6];
-                bool isCharging = (chargeStatus == 0x01 || chargeStatus == 0x02 || chargeStatus == 0x04);
-                BatteryState state = isCharging ? BatteryState.Charging : BatteryState.Discharging;
+
+                BatteryState state;
+                if (chargeStatus == 0x03)
+                {
+                    state = BatteryState.Full;
+                }
+                else if (chargeStatus == 0x01 || chargeStatus == 0x02 || chargeStatus == 0x04)
+                {
+                    state = BatteryState.Charging;
+                }
+                else
+                {
+                    state = BatteryState.Discharging;
+                }
 
                 return BatteryTelemetry.Online(level, state);
             }
             else if (entry.FeatureId == FEATURE_UNIFIED_BATTERY)
             {
-                // Bytes 4-5: Measured voltage in millivolts
-                // Byte 6: Status flag (0x01, 0x03 = charging)
+                // Feature 0x1004 (Unified Battery Voltage - from HeadsetControl / HID++ specification):
+                // Bytes 4-5: Measured voltage in millivolts (Big Endian)
+                // Byte 6: Status flag:
+                //   0x01 = Idle / Discharging
+                //   0x03 = Actively Charging
                 int mv = (resp[4] << 8) | resp[5];
                 byte statusByte = resp[6];
-                bool isCharging = (statusByte == 0x03 || statusByte == 0x01);
+                bool isCharging = (statusByte == 0x03);
 
                 // Map 3500mV (empty) .. 4200mV (full LiPo)
                 int percent = (mv <= 3500) ? 0 : (mv >= 4200 ? 100 : (mv - 3500) * 100 / 700);
@@ -258,8 +264,22 @@ namespace OmniHid.Core.Protocols
                 {
                     int level = resp[4];
                     byte chargeStatus = resp[6];
-                    bool isCharging = (chargeStatus == 0x01 || chargeStatus == 0x02 || chargeStatus == 0x04);
-                    return BatteryTelemetry.Online(level, isCharging ? BatteryState.Charging : BatteryState.Discharging);
+
+                    BatteryState state;
+                    if (chargeStatus == 0x03)
+                    {
+                        state = BatteryState.Full;
+                    }
+                    else if (chargeStatus == 0x01 || chargeStatus == 0x02 || chargeStatus == 0x04)
+                    {
+                        state = BatteryState.Charging;
+                    }
+                    else
+                    {
+                        state = BatteryState.Discharging;
+                    }
+
+                    return BatteryTelemetry.Online(level, state);
                 }
             }
 
@@ -275,7 +295,8 @@ namespace OmniHid.Core.Protocols
                 {
                     int mv = (resp[4] << 8) | resp[5];
                     byte statusByte = resp[6];
-                    bool isCharging = (statusByte == 0x03 || statusByte == 0x01);
+                    bool isCharging = (statusByte == 0x03);
+
                     int percent = (mv <= 3500) ? 0 : (mv >= 4200 ? 100 : (mv - 3500) * 100 / 700);
                     return BatteryTelemetry.Online(percent, isCharging ? BatteryState.Charging : BatteryState.Discharging, mv);
                 }

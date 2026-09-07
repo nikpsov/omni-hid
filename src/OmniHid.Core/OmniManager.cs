@@ -746,10 +746,25 @@ namespace OmniHid.Core
                     {
                         _newDevices.Add(device);
                     }
-
-                    BatteryTelemetry telemetry = device.RefreshTelemetry();
-                    _updatedTelemetry.Add(new KeyValuePair<IOmniDevice, BatteryTelemetry>(device, telemetry));
                 }
+
+                // Query telemetry in parallel across all detected devices to prevent accumulating offline I/O timeouts
+                System.Threading.Tasks.Parallel.ForEach(
+                    _logicalGroups.Values,
+                    new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 4 },
+                    group =>
+                    {
+                        OmniDevice dev;
+                        lock (_lock)
+                        {
+                            if (!_activeDevices.TryGetValue(group.DeviceId, out dev)) return;
+                        }
+                        BatteryTelemetry telemetry = dev.RefreshTelemetry();
+                        lock (_updatedTelemetry)
+                        {
+                            _updatedTelemetry.Add(new KeyValuePair<IOmniDevice, BatteryTelemetry>(dev, telemetry));
+                        }
+                    });
 
                 // ── Phase 4: Clean Up Disconnected Devices ────────────────────
                 List<OmniDevice> notifyRemoved = null;

@@ -24,23 +24,33 @@ namespace OmniHid.Core.Protocols
     ///         2 = Low battery warning
     ///         4 or 5 = Actively charging
     /// </remarks>
-    public class CorsairHeadsetProtocol : IProtocolHandler
+    public class CorsairHeadsetProtocol : BaseProtocolHandler
     {
+        // ═══════════════════════════════════════════════════════════════════════
+        // Protocol Constants
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private const ushort USAGE_PAGE_BATTERY   = 0xFFC5;
+        private const ushort USAGE_BATTERY        = 0x0001;
+        private const int BUFFER_SIZE             = 64;
+        private const int MIN_REPORT_LENGTH       = 5;
+        private const int TIMEOUT_INPUT_MS        = 100;
+
+        private const int OFFSET_BATTERY          = 2;
+        private const int OFFSET_STATUS           = 4;
+        private const byte STATUS_DISCONNECTED    = 0;
+        private const byte STATUS_CHARGING_4      = 4;
+        private const byte STATUS_CHARGING_5      = 5;
+
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Properties
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "corsair-headset"; } }
+        public override string ProtocolId { get { return "corsair-headset"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Corsair Headset Protocol"; } }
-
-        /// <summary>
-        /// Gets a value indicating whether this protocol can query telemetry when no Windows HID interface handles exist.
-        /// Corsair headsets require direct communication via HID Input or Feature reports.
-        /// </summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "Corsair Headset Protocol"; } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Telemetry Query Implementation
@@ -53,52 +63,49 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this headset receiver.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Headset receiver not connected");
 
             // Check Windows PnP battery property cache first
-            foreach (var iface in interfaces)
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                int pnpLevel = transport.GetPnpBatteryLevel(iface.DevicePath);
-                if (pnpLevel >= 0 && pnpLevel <= 100)
-                {
-                    return BatteryTelemetry.Online(pnpLevel, BatteryState.Discharging);
-                }
+                return pnpTelemetry;
             }
 
-            // Rank candidate configuration endpoints
-            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile);
+            // Rank candidate configuration endpoints (prioritizing 0xFFC5:0x0001)
+            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile, customUsagePage: USAGE_PAGE_BATTERY, customUsage: USAGE_BATTERY);
 
             foreach (var targetDev in candidates)
             {
-                // Read status report via non-blocking Input Report with Feature fallback
-                byte[] buffer = new byte[64];
-                bool ok = transport.ReadInputReport(targetDev.DevicePath, buffer, 250);
+                // Read status report via non-blocking Input Report with fast Feature fallback
+                byte[] buffer = new byte[BUFFER_SIZE];
+                bool ok = transport.ReadInputReport(targetDev.DevicePath, buffer, TIMEOUT_INPUT_MS);
                 if (!ok)
                 {
-                    buffer = new byte[64];
+                    buffer = new byte[BUFFER_SIZE];
                     ok = transport.GetFeatureReport(targetDev.DevicePath, 0x00, buffer);
                 }
 
-                if (!ok || buffer.Length < 5)
+                if (!ok || buffer.Length < MIN_REPORT_LENGTH)
                 {
                     continue;
                 }
 
                 // Byte 4: Connection status (0 = disconnected from dongle)
-                byte statusByte = buffer[4];
-                if (statusByte == 0)
+                byte statusByte = buffer[OFFSET_STATUS];
+                if (statusByte == STATUS_DISCONNECTED)
                 {
                     continue;
                 }
 
                 // Status 4 or 5 indicates actively charging
-                bool isCharging = (statusByte == 4 || statusByte == 5);
+                bool isCharging = (statusByte == STATUS_CHARGING_4 || statusByte == STATUS_CHARGING_5);
 
                 // Byte 2: Battery gauge (Bit 7 is mic status; lower 7 bits is 0..100 level)
-                byte batteryByte = buffer[2];
+                byte batteryByte = buffer[OFFSET_BATTERY];
                 int level = batteryByte & 0x7F;
 
                 if (level > 100) level = 100;
@@ -108,57 +115,6 @@ namespace OmniHid.Core.Protocols
             }
 
             return BatteryTelemetry.Offline("Headset offline or unreachable");
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // Interface Selection Helpers
-        // ═══════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Ranks HID interfaces prioritizing profiles, battery telemetry collection (0xFFC5), and vendor collections.
-        /// </summary>
-        private static List<HidDeviceInfo> GetCandidateInterfaces(List<HidDeviceInfo> interfaces, DeviceProfile profile)
-        {
-            List<HidDeviceInfo> candidates = new List<HidDeviceInfo>();
-
-            // Priority 0: Explicit target usage page from profile
-            if (profile != null && profile.TargetUsagePage != 0)
-            {
-                foreach (var iface in interfaces)
-                {
-                    if (iface.UsagePage == profile.TargetUsagePage &&
-                        (profile.TargetUsage == 0 || iface.Usage == profile.TargetUsage))
-                    {
-                        candidates.Add(iface);
-                    }
-                }
-            }
-
-            // Priority 1: Corsair dedicated battery usage page (UsagePage 0xFFC5, Usage 0x0001)
-            foreach (var iface in interfaces)
-            {
-                if (iface.UsagePage == 0xFFC5 && iface.Usage == 0x0001 && !candidates.Contains(iface))
-                {
-                    candidates.Add(iface);
-                }
-            }
-
-            // Priority 2: Other vendor-defined collections
-            foreach (var iface in interfaces)
-            {
-                if (iface.UsagePage >= 0xFF00 && !candidates.Contains(iface))
-                {
-                    candidates.Add(iface);
-                }
-            }
-
-            // Priority 3: Fallback to all interfaces
-            if (candidates.Count == 0)
-            {
-                candidates.AddRange(interfaces);
-            }
-
-            return candidates;
         }
     }
 }

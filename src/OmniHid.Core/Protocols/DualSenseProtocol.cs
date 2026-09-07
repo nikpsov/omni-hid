@@ -18,23 +18,38 @@ namespace OmniHid.Core.Protocols
     ///   Byte 54 contains battery data.
     /// - Legacy DualShock 4: Input Report 0x01, Byte 30 contains battery level.
     /// </remarks>
-    public class DualSenseProtocol : IProtocolHandler
+    public class DualSenseProtocol : BaseProtocolHandler
     {
+        // ═══════════════════════════════════════════════════════════════════════
+        // Protocol Constants
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private const byte REPORT_ID_USB            = 0x01;
+        private const byte REPORT_ID_BT             = 0x31;
+        private const byte REPORT_ID_FEATURE        = 0x05;
+
+        private const ushort USAGE_PAGE_GENERIC     = 0x0001;
+        private const ushort USAGE_GAMEPAD          = 0x0005;
+
+        private const int OFFSET_USB_BATTERY        = 53;
+        private const int OFFSET_BT_BATTERY         = 54;
+        private const int OFFSET_DS4_BATTERY        = 30;
+
+        private const byte MASK_BATTERY_LEVEL       = 0x0F;
+        private const byte MASK_CHARGING            = 0x10;
+
+        private const int MIN_BUFFER_LENGTH         = 78;
+        private const int TIMEOUT_INPUT_MS          = 100;
+
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Properties
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "sony-dualsense"; } }
+        public override string ProtocolId { get { return "sony-dualsense"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Sony DualSense / DualShock Protocol"; } }
-
-        /// <summary>
-        /// Gets a value indicating whether this protocol can query telemetry when no Windows HID interface handles exist.
-        /// Sony PlayStation controllers require direct communication via HID Input or Feature reports.
-        /// </summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "Sony DualSense / DualShock Protocol"; } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Telemetry Query Implementation
@@ -47,34 +62,31 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this controller.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Controller not found");
 
             // Check Windows PnP battery property cache first
-            foreach (var iface in interfaces)
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                int pnpLevel = transport.GetPnpBatteryLevel(iface.DevicePath);
-                if (pnpLevel >= 0 && pnpLevel <= 100)
-                {
-                    return BatteryTelemetry.Online(pnpLevel, BatteryState.Discharging);
-                }
+                return pnpTelemetry;
             }
 
-            // Rank candidate gamepad endpoints
-            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile);
+            // Rank candidate gamepad endpoints (prioritizing 0x0001:0x0005 and reports >= 64 bytes)
+            List<HidDeviceInfo> candidates = GetCandidateInterfaces(interfaces, profile, minInputLen: 64, customUsagePage: USAGE_PAGE_GENERIC, customUsage: USAGE_GAMEPAD);
 
             foreach (var targetDev in candidates)
             {
-                // Read Input Report via Overlapped I/O with Feature Report 0x05 fallback
-                int bufLen = Math.Max(78, (int)targetDev.InputReportByteLength);
+                // Read Input Report via Overlapped I/O with fast Feature Report fallback
+                int bufLen = Math.Max(MIN_BUFFER_LENGTH, (int)targetDev.InputReportByteLength);
                 byte[] buffer = new byte[bufLen];
-                bool ok = transport.ReadInputReport(targetDev.DevicePath, buffer, 300);
+                bool ok = transport.ReadInputReport(targetDev.DevicePath, buffer, TIMEOUT_INPUT_MS);
                 if (!ok)
                 {
                     buffer = new byte[bufLen];
-                    ok = transport.GetFeatureReport(targetDev.DevicePath, 0x05, buffer);
+                    ok = transport.GetFeatureReport(targetDev.DevicePath, REPORT_ID_FEATURE, buffer);
                 }
 
                 if (!ok)
@@ -85,19 +97,19 @@ namespace OmniHid.Core.Protocols
                 byte batteryByte = 0;
 
                 // Report ID 0x01: USB standard DualSense input frame (offset 53)
-                if (buffer[0] == 0x01 && buffer.Length >= 54)
+                if (buffer[0] == REPORT_ID_USB && buffer.Length > OFFSET_USB_BATTERY)
                 {
-                    batteryByte = buffer[53];
+                    batteryByte = buffer[OFFSET_USB_BATTERY];
                 }
                 // Report ID 0x31: Bluetooth extended DualSense input frame (offset 54)
-                else if (buffer[0] == 0x31 && buffer.Length >= 55)
+                else if (buffer[0] == REPORT_ID_BT && buffer.Length > OFFSET_BT_BATTERY)
                 {
-                    batteryByte = buffer[54];
+                    batteryByte = buffer[OFFSET_BT_BATTERY];
                 }
                 // Legacy DualShock 4 frame (offset 30)
-                else if (buffer.Length >= 31)
+                else if (buffer.Length > OFFSET_DS4_BATTERY)
                 {
-                    batteryByte = buffer[30];
+                    batteryByte = buffer[OFFSET_DS4_BATTERY];
                 }
                 else
                 {
@@ -105,67 +117,16 @@ namespace OmniHid.Core.Protocols
                 }
 
                 // Lower 4 bits: 0..10 level (multiply by 10 to get 0..100 percentage)
-                int rawLevel = batteryByte & 0x0F;
+                int rawLevel = batteryByte & MASK_BATTERY_LEVEL;
                 int percent = Math.Min(100, rawLevel * 10);
 
                 // Bit 4 (0x10): 1 = charging, 0 = discharging
-                bool isCharging = (batteryByte & 0x10) != 0;
+                bool isCharging = (batteryByte & MASK_CHARGING) != 0;
 
                 return BatteryTelemetry.Online(percent, isCharging ? BatteryState.Charging : BatteryState.Discharging);
             }
 
             return BatteryTelemetry.Offline("Controller sleeping or disconnected");
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // Interface Selection Helpers
-        // ═══════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Ranks HID interfaces prioritizing profiles, gamepad collections (UsagePage 0x01, Usage 0x05), and input buffer capacity.
-        /// </summary>
-        private static List<HidDeviceInfo> GetCandidateInterfaces(List<HidDeviceInfo> interfaces, DeviceProfile profile)
-        {
-            List<HidDeviceInfo> candidates = new List<HidDeviceInfo>();
-
-            // Priority 0: Explicit target usage page from profile
-            if (profile != null && profile.TargetUsagePage != 0)
-            {
-                foreach (var iface in interfaces)
-                {
-                    if (iface.UsagePage == profile.TargetUsagePage &&
-                        (profile.TargetUsage == 0 || iface.Usage == profile.TargetUsage))
-                    {
-                        candidates.Add(iface);
-                    }
-                }
-            }
-
-            // Priority 1: Gamepad collection (Generic Desktop 0x0001, Gamepad 0x0005)
-            foreach (var iface in interfaces)
-            {
-                if (iface.UsagePage == 0x0001 && iface.Usage == 0x0005 && !candidates.Contains(iface))
-                {
-                    candidates.Add(iface);
-                }
-            }
-
-            // Priority 2: Endpoints with input reports >= 64 bytes
-            foreach (var iface in interfaces)
-            {
-                if (iface.InputReportByteLength >= 64 && !candidates.Contains(iface))
-                {
-                    candidates.Add(iface);
-                }
-            }
-
-            // Priority 3: Fallback to all interfaces
-            if (candidates.Count == 0)
-            {
-                candidates.AddRange(interfaces);
-            }
-
-            return candidates;
         }
     }
 }

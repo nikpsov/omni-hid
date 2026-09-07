@@ -33,6 +33,34 @@ namespace OmniHid.Cli.Commands
         /// <param name="profile">Receives the matched declarative profile, or null.</param>
         /// <param name="targetPids">Receives the set of all PIDs associated with this physical model.</param>
         /// <returns><c>true</c> if a target device was selected; otherwise, <c>false</c>.</returns>
+        /// <summary>
+        /// Represents a consolidated target peripheral candidate for diagnostic interaction.
+        /// </summary>
+        private sealed class TargetCandidate
+        {
+            public string Name { get; set; }
+            public ushort VendorId { get; set; }
+            public ushort ProductId { get; set; }
+            public List<HidDeviceInfo> Interfaces { get; set; }
+            public DeviceProfile Profile { get; set; }
+            public HashSet<ushort> TargetPids { get; set; }
+            public string SourceTag { get; set; }
+        }
+
+        /// <summary>
+        /// Selects a target peripheral device from consolidated devices or raw HID interface collections.
+        /// Resolves the associated declarative profile and all sibling Product IDs for dual-mode devices.
+        /// </summary>
+        /// <param name="transport">Transport layer abstraction for device discovery.</param>
+        /// <param name="filter">Optional user-specified filter string.</param>
+        /// <param name="interactiveMode">True if the CLI is running interactively.</param>
+        /// <param name="devName">Receives the resolved device model name.</param>
+        /// <param name="vid">Receives the USB Vendor ID.</param>
+        /// <param name="pid">Receives the active USB Product ID.</param>
+        /// <param name="targetInterfaces">Receives the collection of HID interfaces belonging to the device.</param>
+        /// <param name="profile">Receives the matched declarative profile, or null.</param>
+        /// <param name="targetPids">Receives the set of all PIDs associated with this physical model.</param>
+        /// <returns><c>true</c> if a target device was selected; otherwise, <c>false</c>.</returns>
         public static bool SelectTargetDevice(
             Win32HidTransport transport,
             string filter,
@@ -53,86 +81,83 @@ namespace OmniHid.Cli.Commands
 
             using (var manager = new OmniManager(transport, enableInternalWatcher: false))
             {
-                var allDevices = manager.ScanDevices();
-                var targets = new List<IOmniDevice>();
+                var candidates = new List<TargetCandidate>();
+                var coveredKeys = new HashSet<uint>();
 
+                // 1. Discover all high-level logical devices resolved by OmniManager
+                var allDevices = manager.ScanDevices();
                 foreach (var d in allDevices)
                 {
-                    if (CliFormatter.MatchesFilter(d, filter))
+                    if (!CliFormatter.MatchesFilter(d, filter))
                     {
-                        targets.Add(d);
+                        continue;
                     }
-                }
 
-                if (targets.Count >= 1)
-                {
-                    IOmniDevice td = null;
-                    if (targets.Count == 1 || !interactiveMode)
+                    var pids = new HashSet<ushort>();
+                    var omniDev = d as OmniDevice;
+                    var prof = omniDev != null ? omniDev.Profile : null;
+                    if (prof == null)
                     {
-                        td = targets[0];
+                        prof = manager.Registry.FindProfile(d.VendorId, d.ProductId, d.Name);
+                    }
+
+                    if (prof != null && prof.ProductIds != null)
+                    {
+                        for (int i = 0; i < prof.ProductIds.Length; i++)
+                        {
+                            pids.Add(prof.ProductIds[i]);
+                        }
+                    }
+                    pids.Add(d.ProductId);
+
+                    string tag;
+                    if (prof != null && prof.IsRegisteredProfile)
+                    {
+                        tag = "Profile: " + (!string.IsNullOrEmpty(prof.ModelName) ? prof.ModelName : prof.ProtocolId);
+                    }
+                    else if (omniDev != null && omniDev.Category != DeviceCategory.Unknown)
+                    {
+                        tag = "Generic " + omniDev.Category;
                     }
                     else
                     {
-                        Console.WriteLine("Detected {0} matching peripheral(s):", targets.Count);
-                        for (int i = 0; i < targets.Count; i++)
-                        {
-                            Console.WriteLine("  [{0}] {1} (VID: 0x{2:X4}, PID: 0x{3:X4}, Endpoints: {4})",
-                                i + 1, targets[i].Name, targets[i].VendorId, targets[i].ProductId, targets[i].Interfaces.Count);
-                        }
-                        Console.Write(string.Format("\nSelect device [1-{0}]: ", targets.Count));
-                        string choice = Console.ReadLine();
-                        int selIdx = 1;
-                        if (!int.TryParse(choice != null ? choice.Trim() : "", out selIdx) || selIdx < 1 || selIdx > targets.Count)
-                            selIdx = 1;
-
-                        td = targets[selIdx - 1];
+                        tag = "Detected Peripheral";
                     }
 
-                    devName = td.Name;
-                    vid = td.VendorId;
-                    pid = td.ProductId;
-                    targetInterfaces = new List<HidDeviceInfo>(td.Interfaces);
-
-                    var omniDev = td as OmniDevice;
-                    profile = omniDev != null ? omniDev.Profile : null;
-                    if (profile == null)
+                    candidates.Add(new TargetCandidate
                     {
-                        profile = manager.Registry.FindProfile(vid, pid, devName);
-                    }
+                        Name = d.Name,
+                        VendorId = d.VendorId,
+                        ProductId = d.ProductId,
+                        Interfaces = new List<HidDeviceInfo>(d.Interfaces),
+                        Profile = prof,
+                        TargetPids = pids,
+                        SourceTag = tag
+                    });
 
-                    if (profile != null && profile.ProductIds != null)
-                    {
-                        for (int i = 0; i < profile.ProductIds.Length; i++)
-                        {
-                            targetPids.Add(profile.ProductIds[i]);
-                        }
-                    }
-                    targetPids.Add(pid);
-                    return true;
+                    coveredKeys.Add(((uint)d.VendorId << 16) | d.ProductId);
                 }
 
-                // Fallback: search raw HID endpoints if not matched by OmniManager
+                // 2. Discover raw HID interface groups not covered by high-level devices
                 var allRaw = transport.Enumerate();
                 var rawMatching = new List<HidDeviceInfo>();
                 foreach (var r in allRaw)
                 {
-                    if (CliFormatter.MatchesFilter(r, filter)) rawMatching.Add(r);
+                    if (CliFormatter.MatchesFilter(r, filter))
+                    {
+                        rawMatching.Add(r);
+                    }
                 }
 
-                if (rawMatching.Count == 0)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("No matching HID devices found for filter '{0}'.", filter ?? "");
-                    Console.WriteLine("Tip: Run 'omni-hid list' (option [2]) to view all present hardware devices.");
-                    Console.ResetColor();
-                    return false;
-                }
-
-                // Group raw endpoints by VID:PID
-                Dictionary<uint, List<HidDeviceInfo>> byVidPid = new Dictionary<uint, List<HidDeviceInfo>>();
+                var byVidPid = new Dictionary<uint, List<HidDeviceInfo>>();
                 foreach (var r in rawMatching)
                 {
                     uint key = ((uint)r.VendorId << 16) | r.ProductId;
+                    if (coveredKeys.Contains(key))
+                    {
+                        continue;
+                    }
+
                     List<HidDeviceInfo> list;
                     if (!byVidPid.TryGetValue(key, out list))
                     {
@@ -142,46 +167,146 @@ namespace OmniHid.Cli.Commands
                     list.Add(r);
                 }
 
-                List<List<HidDeviceInfo>> deviceGroups = new List<List<HidDeviceInfo>>(byVidPid.Values);
-                List<HidDeviceInfo> chosen = null;
-
-                if (deviceGroups.Count == 1 || !interactiveMode)
+                foreach (var kvp in byVidPid)
                 {
-                    chosen = deviceGroups[0];
+                    var g = kvp.Value;
+                    ushort gVid = g[0].VendorId;
+                    ushort gPid = g[0].ProductId;
+                    string gName = !string.IsNullOrEmpty(g[0].ProductString)
+                        ? g[0].ProductString.Trim()
+                        : (!string.IsNullOrEmpty(g[0].ManufacturerString)
+                            ? g[0].ManufacturerString.Trim() + " HID Device"
+                            : string.Format("USB HID Device (0x{0:X4}:0x{1:X4})", gVid, gPid));
+
+                    var prof = manager.Registry.FindProfile(gVid, gPid, gName);
+                    var pids = new HashSet<ushort>();
+                    if (prof != null && prof.ProductIds != null)
+                    {
+                        for (int i = 0; i < prof.ProductIds.Length; i++)
+                        {
+                            pids.Add(prof.ProductIds[i]);
+                        }
+                    }
+                    pids.Add(gPid);
+
+                    string tag = (prof != null && prof.IsRegisteredProfile)
+                        ? "Profile: " + (!string.IsNullOrEmpty(prof.ModelName) ? prof.ModelName : prof.ProtocolId)
+                        : "Raw HID";
+
+                    candidates.Add(new TargetCandidate
+                    {
+                        Name = gName,
+                        VendorId = gVid,
+                        ProductId = gPid,
+                        Interfaces = g,
+                        Profile = prof,
+                        TargetPids = pids,
+                        SourceTag = tag
+                    });
                 }
+
+                if (candidates.Count == 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("No matching HID devices found for filter '{0}'.", filter ?? "");
+                    Console.WriteLine("Tip: Run 'omni-hid list' (option [2]) to view all present hardware devices.");
+                    Console.ResetColor();
+                    return false;
+                }
+
+                TargetCandidate chosen = null;
+
+                // Case A: Explicit user CLI filter matched exactly 1 device -> auto-select with confirmation print
+                if (candidates.Count == 1 && !string.IsNullOrEmpty(filter))
+                {
+                    chosen = candidates[0];
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("Target Device matched: {0} (VID: 0x{1:X4}, PID: 0x{2:X4})",
+                        chosen.Name, chosen.VendorId, chosen.ProductId);
+                    Console.ResetColor();
+                }
+                // Case B: Non-interactive headless execution
+                else if (!interactiveMode)
+                {
+                    chosen = candidates[0];
+                }
+                // Case C: Single device detected without filter in interactive mode -> prompt user confirmation
+                else if (candidates.Count == 1)
+                {
+                    Console.WriteLine("Detected 1 target peripheral in system:");
+                    Console.WriteLine("  [1] {0} (VID: 0x{1:X4}, PID: 0x{2:X4}, Endpoints: {3}) [{4}]",
+                        candidates[0].Name, candidates[0].VendorId, candidates[0].ProductId,
+                        candidates[0].Interfaces.Count, candidates[0].SourceTag);
+                    Console.WriteLine("  [0] Cancel / Return to menu\n");
+
+                    Console.Write("Select device [1] (Press Enter to continue, 0 to cancel): ");
+                    string input = Console.ReadLine();
+                    string trimmed = input != null ? input.Trim().ToLowerInvariant() : "";
+
+                    if (trimmed == "0" || trimmed == "q" || trimmed == "quit" || trimmed == "cancel" || trimmed == "exit")
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkYellow;
+                        Console.WriteLine("Operation cancelled by user.");
+                        Console.ResetColor();
+                        return false;
+                    }
+
+                    chosen = candidates[0];
+                }
+                // Case D: Multiple candidate devices detected -> interactive selection
                 else
                 {
-                    Console.WriteLine("Multiple device groups found:");
-                    for (int i = 0; i < deviceGroups.Count; i++)
-                    {
-                        var g = deviceGroups[i];
-                        string title = !string.IsNullOrEmpty(g[0].ProductString) ? g[0].ProductString : g[0].ManufacturerString ?? "Device";
-                        Console.WriteLine("  [{0}] {1} (VID: 0x{2:X4}, PID: 0x{3:X4}, Endpoints: {4})",
-                            i + 1, title, g[0].VendorId, g[0].ProductId, g.Count);
-                    }
-                    Console.Write(string.Format("\nSelect device group [1-{0}]: ", deviceGroups.Count));
-                    string choice = Console.ReadLine();
-                    int selIdx = 1;
-                    if (!int.TryParse(choice != null ? choice.Trim() : "", out selIdx) || selIdx < 1 || selIdx > deviceGroups.Count)
-                        selIdx = 1;
+                    Console.WriteLine(string.IsNullOrEmpty(filter)
+                        ? string.Format("Detected {0} candidate peripheral(s):", candidates.Count)
+                        : string.Format("Detected {0} candidate peripheral(s) matching '{1}':", candidates.Count, filter));
 
-                    chosen = deviceGroups[selIdx - 1];
+                    for (int i = 0; i < candidates.Count; i++)
+                    {
+                        var c = candidates[i];
+                        Console.WriteLine("  [{0}] {1} (VID: 0x{2:X4}, PID: 0x{3:X4}, Endpoints: {4}) [{5}]",
+                            i + 1, c.Name, c.VendorId, c.ProductId, c.Interfaces.Count, c.SourceTag);
+                    }
+                    Console.WriteLine("  [0] Cancel / Return to menu\n");
+
+                    while (true)
+                    {
+                        Console.Write("Select device [1-{0}] (default: 1, 0 to cancel): ", candidates.Count);
+                        string input = Console.ReadLine();
+                        string trimmed = input != null ? input.Trim().ToLowerInvariant() : "";
+
+                        if (string.IsNullOrEmpty(trimmed) || trimmed == "1")
+                        {
+                            chosen = candidates[0];
+                            break;
+                        }
+
+                        if (trimmed == "0" || trimmed == "q" || trimmed == "quit" || trimmed == "cancel" || trimmed == "exit")
+                        {
+                            Console.ForegroundColor = ConsoleColor.DarkYellow;
+                            Console.WriteLine("Operation cancelled by user.");
+                            Console.ResetColor();
+                            return false;
+                        }
+
+                        int selIdx;
+                        if (int.TryParse(trimmed, out selIdx) && selIdx >= 1 && selIdx <= candidates.Count)
+                        {
+                            chosen = candidates[selIdx - 1];
+                            break;
+                        }
+
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("Invalid selection. Please enter a number between 1 and {0} (or 0 to cancel).", candidates.Count);
+                        Console.ResetColor();
+                    }
                 }
 
-                vid = chosen[0].VendorId;
-                pid = chosen[0].ProductId;
-                devName = !string.IsNullOrEmpty(chosen[0].ProductString) ? chosen[0].ProductString : "USB HID Device (0x" + vid.ToString("X4") + ")";
-                targetInterfaces = chosen;
-
-                profile = manager.Registry.FindProfile(vid, pid, devName);
-                if (profile != null && profile.ProductIds != null)
-                {
-                    for (int i = 0; i < profile.ProductIds.Length; i++)
-                    {
-                        targetPids.Add(profile.ProductIds[i]);
-                    }
-                }
-                targetPids.Add(pid);
+                devName = chosen.Name;
+                vid = chosen.VendorId;
+                pid = chosen.ProductId;
+                targetInterfaces = chosen.Interfaces;
+                profile = chosen.Profile;
+                targetPids = chosen.TargetPids;
                 return true;
             }
         }

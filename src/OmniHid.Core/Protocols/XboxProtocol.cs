@@ -21,20 +21,20 @@ namespace OmniHid.Core.Protocols
     /// 3. Bluetooth HID Input Reports:
     ///    Queries Report 0x01 (offset 18) or Feature Report 0x04 for raw percentage.
     /// </remarks>
-    public class XboxProtocol : IProtocolHandler
+    public class XboxProtocol : BaseProtocolHandler
     {
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Properties
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "xbox-controller"; } }
+        public override string ProtocolId { get { return "xbox-controller"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Xbox Wireless / XInput Protocol"; } }
+        public override string ProtocolName { get { return "Xbox Wireless / XInput Protocol"; } }
 
         /// <summary>Gets a value indicating whether this protocol can query telemetry without HID interfaces.</summary>
-        public bool CanQueryWithoutHidInterfaces { get { return true; } }
+        public override bool CanQueryWithoutHidInterfaces { get { return true; } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Telemetry Query Implementation
@@ -47,7 +47,7 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this controller.</param>
         /// <param name="profile">Declarative profile information containing the assigned XInput user slot.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             int slotToQuery = profile != null ? profile.AssignedSlot : -1;
 

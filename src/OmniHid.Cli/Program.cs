@@ -131,7 +131,7 @@ namespace OmniHid.Cli
                 case "4":
                 case "hunt":
                 case "battery":
-                    HunterCommand.Execute(filter);
+                    HunterCommand.Execute(filter, true);
                     break;
                 case "5":
                 case "sniff":
@@ -211,61 +211,65 @@ namespace OmniHid.Cli
                 Console.Write("  Enter choice [0-9, U] or command: ");
 
                 string rawChoice = Console.ReadLine();
-                string choice = rawChoice != null ? rawChoice.Trim().ToLowerInvariant() : "";
+                string choice = rawChoice != null ? rawChoice.Trim() : "";
                 Console.WriteLine();
 
-                switch (choice)
+                if (string.IsNullOrEmpty(choice))
+                {
+                    continue;
+                }
+
+                // Split optional arguments from interactive command line (e.g. "4 logitech" or "hunt viper")
+                string[] parts = choice.Split(new char[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                string cmd = parts[0].ToLowerInvariant();
+                string arg = parts.Length > 1 ? parts[1].Trim() : null;
+
+                switch (cmd)
                 {
                     case "1":
                     case "scan":
-                        ScanCommand.Execute(null, false, false);
+                        if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase) || string.Equals(arg, "-a", StringComparison.OrdinalIgnoreCase))
+                            ScanCommand.Execute(null, true, false);
+                        else if (string.Equals(arg, "--registered", StringComparison.OrdinalIgnoreCase) || string.Equals(arg, "-r", StringComparison.OrdinalIgnoreCase))
+                            ScanCommand.Execute(null, false, true);
+                        else
+                            ScanCommand.Execute(arg, false, false);
                         CliFormatter.SafeWaitForKey();
                         break;
-                    case "1 --all":
-                    case "1 -a":
-                    case "scan --all":
-                    case "scan -a":
-                        ScanCommand.Execute(null, true, false);
-                        CliFormatter.SafeWaitForKey();
-                        break;
-                    case "1 -r":
-                    case "1 --registered":
-                    case "scan -r":
-                    case "scan --registered":
                     case "9":
                     case "registered":
                     case "scan-registered":
                     case "json":
-                        ScanCommand.Execute(null, false, true);
-                        CliFormatter.SafeWaitForKey();
-                        break;
-                    case "9 --all":
-                    case "9 -a":
-                    case "registered --all":
-                        ScanCommand.Execute(null, true, true);
+                        if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase) || string.Equals(arg, "-a", StringComparison.OrdinalIgnoreCase))
+                            ScanCommand.Execute(null, true, true);
+                        else
+                            ScanCommand.Execute(arg, false, true);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "2":
                     case "list":
-                        ListCommand.Execute(null);
+                        if (string.Equals(arg, "--flat", StringComparison.OrdinalIgnoreCase))
+                            ListCommand.Execute(null, true);
+                        else
+                            ListCommand.Execute(arg, false);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "3":
                     case "debug":
                     case "diag":
-                        DebugCommand.Execute(null);
+                        DebugCommand.Execute(arg);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "4":
                     case "hunt":
                     case "battery":
-                        HunterCommand.Execute(null);
+                        HunterCommand.Execute(arg, true);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "5":
                     case "sniff":
                     case "dump":
-                        SnifferCommand.Execute(null);
+                        SnifferCommand.Execute(arg);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "6":
@@ -276,7 +280,7 @@ namespace OmniHid.Cli
                     case "7":
                     case "calibrate":
                     case "cal":
-                        CalibrateCommand.Execute(null);
+                        CalibrateCommand.Execute(arg);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "8":
@@ -284,7 +288,7 @@ namespace OmniHid.Cli
                     case "spec":
                     case "issue":
                     case "report":
-                        ExportCommand.Execute(null);
+                        ExportCommand.Execute(arg);
                         CliFormatter.SafeWaitForKey();
                         break;
                     case "u":
@@ -300,7 +304,7 @@ namespace OmniHid.Cli
                         return;
                     default:
                         Console.ForegroundColor = ConsoleColor.DarkYellow;
-                        Console.WriteLine("Unknown choice. Please enter an option from the menu.");
+                        Console.WriteLine("Unknown choice. Please enter an option from the menu (e.g. '4', 'U', or 'hunt logitech').");
                         Console.ResetColor();
                         CliFormatter.SafeWaitForKey();
                         break;

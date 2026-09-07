@@ -28,41 +28,36 @@ namespace OmniHid.Core.Protocols
     ///   - Byte 90: Reserved (0x00).
     /// - Battery Scaling: Raw level in arguments[1] (Byte 10) ranges from 0 to 255 (255 = 100%).
     /// </remarks>
-    public class RazerProtocol : IProtocolHandler
+    public class RazerProtocol : BaseProtocolHandler
     {
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Constants
         // ═══════════════════════════════════════════════════════════════════════
 
-        private const byte CMD_CLASS_POWER = 0x07;
-        private const byte CMD_GET_BATTERY_LEVEL = 0x80;
-        private const byte CMD_GET_CHARGING_STATUS = 0x84;
+        private const byte CMD_CLASS_POWER          = 0x07;
+        private const byte CMD_GET_BATTERY_LEVEL    = 0x80;
+        private const byte CMD_GET_CHARGING_STATUS  = 0x84;
 
-        private const byte RAZER_CMD_BUSY = 0x01;
-        private const byte RAZER_CMD_SUCCESSFUL = 0x02;
+        private const byte RAZER_CMD_BUSY           = 0x01;
+        private const byte RAZER_CMD_SUCCESSFUL     = 0x02;
 
-        private const byte TX_ID_STANDARD = 0x1F;
-        private const byte TX_ID_KEYBOARD_WIRELESS = 0x9F;
-        private const byte TX_ID_ALT = 0x3F;
-        private const byte TX_ID_LEGACY = 0xFF;
+        private const byte TX_ID_STANDARD           = 0x1F;
+        private const byte TX_ID_KEYBOARD_WIRELESS  = 0x9F;
+        private const byte TX_ID_ALT                = 0x3F;
+        private const byte TX_ID_LEGACY             = 0xFF;
 
-        private const int RAZER_REPORT_SIZE = 91;
+        private const int RAZER_REPORT_SIZE         = 91;
+        private const int DELAY_QUERY_MS            = 8;
 
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Properties
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "razer"; } }
+        public override string ProtocolId { get { return "razer"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Razer Peripheral Protocol"; } }
-
-        /// <summary>
-        /// Gets a value indicating whether this protocol can query telemetry when no Windows HID interface handles exist.
-        /// Razer peripherals require direct communication via HID Feature reports.
-        /// </summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "Razer Peripheral Protocol"; } }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Telemetry Query Implementation
@@ -75,23 +70,20 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this peripheral.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Device not found");
 
             // 1. Check Windows PnP device property cache first (fast, used by wireless headset audio dongles)
-            foreach (var iface in interfaces)
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                int pnpLevel = transport.GetPnpBatteryLevel(iface.DevicePath);
-                if (pnpLevel >= 0 && pnpLevel <= 100)
-                {
-                    return BatteryTelemetry.Online(pnpLevel, BatteryState.Discharging);
-                }
+                return pnpTelemetry;
             }
 
-            // 2. Select target HID interface for Razer Feature Reports (Report size >= 90 or vendor usage page)
-            List<HidDeviceInfo> targetCandidates = GetTargetInterfaces(interfaces, profile);
+            // 2. Select candidate HID interfaces for Razer Feature Reports (Report size >= 90)
+            List<HidDeviceInfo> targetCandidates = GetCandidateInterfaces(interfaces, profile, minFeatureLen: 90);
             if (targetCandidates.Count == 0)
             {
                 return BatteryTelemetry.Offline("Razer control interface not found");
@@ -118,10 +110,11 @@ namespace OmniHid.Core.Protocols
                     byte[] request = BuildRazerReport(txId, CMD_CLASS_POWER, CMD_GET_BATTERY_LEVEL, 0x02);
                     if (!transport.SetFeatureReport(dev.DevicePath, request))
                     {
-                        continue;
+                        // Endpoint rejected feature report command; stop probing other TxIDs on this dead handle
+                        break;
                     }
 
-                    Thread.Sleep(20);
+                    Thread.Sleep(DELAY_QUERY_MS);
 
                     byte[] response = new byte[RAZER_REPORT_SIZE];
                     response[0] = 0x00;
@@ -190,7 +183,7 @@ namespace OmniHid.Core.Protocols
                 crc ^= report[i];
             }
             report[89] = crc;           // CRC byte
-            report[90] = 0x00;           // Reserved byte
+            report[90] = 0x00;          // Reserved byte
 
             return report;
         }
@@ -204,7 +197,7 @@ namespace OmniHid.Core.Protocols
             if (!transport.SetFeatureReport(devicePath, request))
                 return false;
 
-            Thread.Sleep(15);
+            Thread.Sleep(DELAY_QUERY_MS);
 
             byte[] response = new byte[RAZER_REPORT_SIZE];
             response[0] = 0x00;
@@ -223,69 +216,6 @@ namespace OmniHid.Core.Protocols
         }
 
         /// <summary>
-        /// Filters and ranks HID interfaces to find candidate Razer control endpoints.
-        /// Prioritizes declarative profile TargetUsagePage, then 90-byte Feature Report collections, then vendor pages.
-        /// </summary>
-        private static List<HidDeviceInfo> GetTargetInterfaces(List<HidDeviceInfo> interfaces, DeviceProfile profile)
-        {
-            List<HidDeviceInfo> targets = new List<HidDeviceInfo>();
-
-            // Priority 0: Explicit target usage page from declarative profile
-            if (profile != null && profile.TargetUsagePage != 0)
-            {
-                foreach (var iface in interfaces)
-                {
-                    if (iface.UsagePage == profile.TargetUsagePage &&
-                        (profile.TargetUsage == 0 || iface.Usage == profile.TargetUsage))
-                    {
-                        targets.Add(iface);
-                    }
-                }
-            }
-
-            // Priority 1: Interfaces with FeatureReportByteLength >= 90 (matches 90-byte Razer report layout)
-            foreach (var iface in interfaces)
-            {
-                if (iface.FeatureReportByteLength >= 90 && !targets.Contains(iface))
-                {
-                    targets.Add(iface);
-                }
-            }
-
-            // Priority 2: Vendor-defined usage pages (UsagePage >= 0xFF00)
-            if (targets.Count == 0)
-            {
-                foreach (var iface in interfaces)
-                {
-                    if (iface.UsagePage >= 0xFF00 && !targets.Contains(iface))
-                    {
-                        targets.Add(iface);
-                    }
-                }
-            }
-
-            // Priority 3: Fallback to all interfaces with feature report capability
-            if (targets.Count == 0)
-            {
-                foreach (var iface in interfaces)
-                {
-                    if (iface.FeatureReportByteLength > 0 && !targets.Contains(iface))
-                    {
-                        targets.Add(iface);
-                    }
-                }
-            }
-
-            // Priority 4: Last resort, all interfaces
-            if (targets.Count == 0)
-            {
-                targets.AddRange(interfaces);
-            }
-
-            return targets;
-        }
-
-        /// <summary>
         /// Checks whether the peripheral supports battery charging telemetry queries.
         /// Peripherals using disposable AA/AAA batteries or profiles without <see cref="DeviceCapabilities.ChargingStatus"/>
         /// do not support charging state detection.
@@ -294,14 +224,15 @@ namespace OmniHid.Core.Protocols
         {
             if (profile != null)
             {
-                // If the profile explicitly lacks ChargingStatus capability, suppress charging queries
-                if ((profile.Capabilities & DeviceCapabilities.ChargingStatus) == 0)
+                // If profile declares capabilities and lacks ChargingStatus, suppress charging query
+                if (profile.Capabilities != DeviceCapabilities.None &&
+                    (profile.Capabilities & DeviceCapabilities.ChargingStatus) == 0)
                 {
                     return false;
                 }
             }
 
-            // Also check known disposable-battery models in case generic/fallback profile was used
+            // Fallback check for unprofiled disposable-battery models
             string name = (profile != null && profile.ModelName != null) ? profile.ModelName : string.Empty;
             return name.IndexOf("Orochi", StringComparison.OrdinalIgnoreCase) < 0 &&
                    name.IndexOf("Atheris", StringComparison.OrdinalIgnoreCase) < 0 &&

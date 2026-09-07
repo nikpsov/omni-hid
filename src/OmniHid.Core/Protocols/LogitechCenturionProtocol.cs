@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Threading;
-using Microsoft.Win32.SafeHandles;
 using OmniHid.Core.Abstractions;
 using OmniHid.Core.Profiles;
 using OmniHid.Core.Transport;
@@ -23,32 +20,30 @@ namespace OmniHid.Core.Protocols
     ///   4. Sub-device Feature Discovery: Discovers sub-device features to locate Battery SoC (0x0104).
     ///   5. Battery Query: Reads battery percentage (byte 0) and charging status (byte 2).
     /// - Feature indices are discovered dynamically and cached per device path.
+    /// - Strictly utilizes IHidTransport abstraction for I/O operations and overlapped readers.
     /// </remarks>
-    public class LogitechCenturionProtocol : IProtocolHandler
+    public class LogitechCenturionProtocol : BaseProtocolHandler
     {
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Constants
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "logitech-centurion"; } }
+        public override string ProtocolId { get { return "logitech-centurion"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Logitech Centurion Protocol (G PRO X 2)"; } }
+        public override string ProtocolName { get { return "Logitech Centurion Protocol (G PRO X 2)"; } }
 
-        /// <summary>Gets a value indicating whether this protocol can query telemetry without HID interfaces.</summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        private const byte REPORT_ID                = 0x51;
+        private const int FRAME_SIZE                = 64;
+        private const byte SOFTWARE_ID              = 0x01;
+        private const byte BRIDGE_SEND_FRAGMENT_FN  = 0x10;
+        private const byte BRIDGE_MESSAGE_EVENT_FN  = 0x10;
 
-        private const byte REPORT_ID = 0x51;
-        private const int FRAME_SIZE = 64;
-        private const byte SOFTWARE_ID = 0x01;
-        private const byte BRIDGE_SEND_FRAGMENT_FN = 0x10;
-        private const byte BRIDGE_MESSAGE_EVENT_FN = 0x10;
-
-        private const ushort FEATURE_ROOT = 0x0000;
-        private const ushort FEATURE_FEATURE_SET = 0x0001;
+        private const ushort FEATURE_ROOT           = 0x0000;
+        private const ushort FEATURE_FEATURE_SET    = 0x0001;
         private const ushort FEATURE_CENTURION_BRIDGE = 0x0003;
-        private const ushort FEATURE_BATTERY_SOC = 0x0104;
+        private const ushort FEATURE_BATTERY_SOC    = 0x0104;
 
         // ═══════════════════════════════════════════════════════════════════════
         // Cached Feature Discovery Information
@@ -75,27 +70,28 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this headset.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
                 return BatteryTelemetry.Offline("Device not found");
 
             // Prioritize UsagePage 0xFFA0 (Logitech vendor audio control)
             HidDeviceInfo targetDev = null;
-            foreach (var dev in interfaces)
+            for (int i = 0; i < interfaces.Count; i++)
             {
-                if (dev.UsagePage == 0xFFA0)
+                if (interfaces[i].UsagePage == 0xFFA0)
                 {
-                    targetDev = dev;
+                    targetDev = interfaces[i];
                     break;
                 }
             }
 
             if (targetDev == null)
             {
-                foreach (var dev in interfaces)
+                for (int i = 0; i < interfaces.Count; i++)
                 {
-                    if (dev.OutputReportByteLength >= 64 || dev.FeatureReportByteLength >= 64)
+                    var dev = interfaces[i];
+                    if (dev.OutputReportByteLength >= FRAME_SIZE || dev.FeatureReportByteLength >= FRAME_SIZE)
                     {
                         targetDev = dev;
                         break;
@@ -104,23 +100,22 @@ namespace OmniHid.Core.Protocols
             }
             if (targetDev == null) targetDev = interfaces[0];
 
-            return ExecuteCenturionQuery(targetDev);
+            return ExecuteCenturionQuery(transport, targetDev);
         }
 
         // ═══════════════════════════════════════════════════════════════════════
         // Centurion Pipeline Execution
         // ═══════════════════════════════════════════════════════════════════════
 
-        private static BatteryTelemetry ExecuteCenturionQuery(HidDeviceInfo dev)
+        private static BatteryTelemetry ExecuteCenturionQuery(IHidTransport transport, HidDeviceInfo dev)
         {
-            SafeFileHandle hDev = Win32HidTransport.OpenDevice(dev.DevicePath, Win32HidNative.GENERIC_READ | Win32HidNative.GENERIC_WRITE, true);
-            if (hDev.IsInvalid)
+            using (HidOverlappedReader reader = transport.OpenOverlappedReader(dev, FRAME_SIZE, REPORT_ID))
             {
-                return BatteryTelemetry.Offline("Cannot open headset handle");
-            }
+                if (reader == null)
+                {
+                    return BatteryTelemetry.Offline("Cannot open headset handle");
+                }
 
-            using (HidOverlappedReader reader = new HidOverlappedReader(dev, hDev, FRAME_SIZE))
-            {
                 CenturionDiscoveryInfo info;
                 lock (_cachedInfo)
                 {
@@ -135,14 +130,14 @@ namespace OmniHid.Core.Protocols
                 // Discover bridge & battery feature indices if not cached
                 if (!info.Discovered)
                 {
-                    if (!DiscoverCenturionFeatures(reader, info))
+                    if (!DiscoverCenturionFeatures(transport, dev.DevicePath, reader, info))
                     {
                         return BatteryTelemetry.Offline("Headset offline or turned off");
                     }
                 }
 
                 // Query Battery SoC via bridge
-                byte[] reply = SendBridgeRequest(reader, info.BridgeIndex, info.BatterySubFeatureIndex, 0x00, null);
+                byte[] reply = SendBridgeRequest(transport, dev.DevicePath, reader, info.BridgeIndex, info.BatterySubFeatureIndex, 0x00, null);
                 if (reply == null || reply.Length < 1)
                 {
                     info.Discovered = false;
@@ -165,10 +160,10 @@ namespace OmniHid.Core.Protocols
         /// <summary>
         /// Navigates the Centurion feature tree to locate bridge and battery feature indices.
         /// </summary>
-        private static bool DiscoverCenturionFeatures(HidOverlappedReader reader, CenturionDiscoveryInfo info)
+        private static bool DiscoverCenturionFeatures(IHidTransport transport, string devicePath, HidOverlappedReader reader, CenturionDiscoveryInfo info)
         {
             // 1. Root -> FeatureSet (0x0001)
-            byte[] fsReply = SendDirectRequest(reader, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
+            byte[] fsReply = SendDirectRequest(transport, devicePath, reader, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
             if (fsReply == null || fsReply.Length == 0 || fsReply[0] == 0)
             {
                 return false;
@@ -176,7 +171,7 @@ namespace OmniHid.Core.Protocols
             byte featureSetIndex = fsReply[0];
 
             // 2. Query feature count from featureSetIndex
-            byte[] countReply = SendDirectRequest(reader, featureSetIndex, 0x00, null);
+            byte[] countReply = SendDirectRequest(transport, devicePath, reader, featureSetIndex, 0x00, null);
             if (countReply == null || countReply.Length == 0)
             {
                 return false;
@@ -187,7 +182,7 @@ namespace OmniHid.Core.Protocols
             byte bridgeIndex = 0xFF;
             for (byte i = 0; i < featureCount; i++)
             {
-                byte[] itemReply = SendDirectRequest(reader, featureSetIndex, 0x10, new byte[] { i });
+                byte[] itemReply = SendDirectRequest(transport, devicePath, reader, featureSetIndex, 0x10, new byte[] { i });
                 if (itemReply != null && itemReply.Length >= 3)
                 {
                     ushort featId = (ushort)((itemReply[1] << 8) | itemReply[2]);
@@ -203,7 +198,7 @@ namespace OmniHid.Core.Protocols
             info.BridgeIndex = bridgeIndex;
 
             // 4. Discover sub-device FeatureSet over bridge
-            byte[] subFsReply = SendBridgeRequest(reader, bridgeIndex, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
+            byte[] subFsReply = SendBridgeRequest(transport, devicePath, reader, bridgeIndex, (byte)FEATURE_ROOT, 0x00, new byte[] { (byte)(FEATURE_FEATURE_SET >> 8), (byte)(FEATURE_FEATURE_SET & 0xFF) });
             if (subFsReply == null || subFsReply.Length == 0 || subFsReply[0] == 0)
             {
                 return false;
@@ -211,7 +206,7 @@ namespace OmniHid.Core.Protocols
             byte subFeatureSetIndex = subFsReply[0];
 
             // 5. Query sub-feature count
-            byte[] subCountReply = SendBridgeRequest(reader, bridgeIndex, subFeatureSetIndex, 0x00, null);
+            byte[] subCountReply = SendBridgeRequest(transport, devicePath, reader, bridgeIndex, subFeatureSetIndex, 0x00, null);
             if (subCountReply == null || subCountReply.Length == 0)
             {
                 return false;
@@ -222,7 +217,7 @@ namespace OmniHid.Core.Protocols
             byte batteryIndex = 0xFF;
             for (byte i = 0; i < subFeatureCount; i++)
             {
-                byte[] itemReply = SendBridgeRequest(reader, bridgeIndex, subFeatureSetIndex, 0x10, new byte[] { i });
+                byte[] itemReply = SendBridgeRequest(transport, devicePath, reader, bridgeIndex, subFeatureSetIndex, 0x10, new byte[] { i });
                 if (itemReply != null && itemReply.Length >= 3)
                 {
                     ushort featId = (ushort)((itemReply[1] << 8) | itemReply[2]);
@@ -244,7 +239,7 @@ namespace OmniHid.Core.Protocols
         // Frame Transmission & Reception
         // ═══════════════════════════════════════════════════════════════════════
 
-        private static byte[] SendDirectRequest(HidOverlappedReader reader, byte featureIndex, byte function, byte[] parameters)
+        private static byte[] SendDirectRequest(IHidTransport transport, string devicePath, HidOverlappedReader reader, byte featureIndex, byte function, byte[] parameters)
         {
             int paramLen = parameters != null ? parameters.Length : 0;
             byte[] payload = new byte[2 + paramLen];
@@ -253,7 +248,7 @@ namespace OmniHid.Core.Protocols
             if (paramLen > 0) Array.Copy(parameters, 0, payload, 2, paramLen);
 
             byte[] frame = BuildCenturionFrame(payload);
-            if (!WriteFrame(reader.Handle, frame)) return null;
+            if (!transport.WriteOutputReport(devicePath, frame)) return null;
 
             for (int attempt = 0; attempt < 8; attempt++)
             {
@@ -272,7 +267,7 @@ namespace OmniHid.Core.Protocols
             return null;
         }
 
-        private static byte[] SendBridgeRequest(HidOverlappedReader reader, byte bridgeIndex, byte subFeatureIndex, byte function, byte[] parameters)
+        private static byte[] SendBridgeRequest(IHidTransport transport, string devicePath, HidOverlappedReader reader, byte bridgeIndex, byte subFeatureIndex, byte function, byte[] parameters)
         {
             int paramLen = parameters != null ? parameters.Length : 0;
             byte[] subMsg = new byte[3 + paramLen];
@@ -289,7 +284,7 @@ namespace OmniHid.Core.Protocols
             Array.Copy(subMsg, 0, layer3, 4, subMsg.Length);
 
             byte[] frame = BuildCenturionFrame(layer3);
-            if (!WriteFrame(reader.Handle, frame)) return null;
+            if (!transport.WriteOutputReport(devicePath, frame)) return null;
 
             for (int attempt = 0; attempt < 8; attempt++)
             {
@@ -343,17 +338,6 @@ namespace OmniHid.Core.Protocols
             byte[] payload = new byte[cpl - 1];
             Array.Copy(frame, 3, payload, 0, payload.Length);
             return payload;
-        }
-
-        private static bool WriteFrame(SafeFileHandle hDev, byte[] frame)
-        {
-            uint written;
-            bool ok = Win32HidNative.WriteFile(hDev, frame, (uint)frame.Length, out written, IntPtr.Zero);
-            if (!ok)
-            {
-                ok = Win32HidNative.HidD_SetOutputReport(hDev, frame, (uint)frame.Length);
-            }
-            return ok;
         }
 
         private static byte[] ReadFrame(HidOverlappedReader reader, int timeoutMs)

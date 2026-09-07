@@ -21,7 +21,7 @@ namespace OmniHid.Cli.Commands
         /// </summary>
         /// <param name="filter">Optional device name or VID/PID filter.</param>
         /// <param name="interactiveMode">True if running interactively.</param>
-        public static void Execute(string filter = null, bool interactiveMode = false)
+        public static void Execute(string filter = null, bool interactiveMode = true)
         {
             CliFormatter.PrintBanner();
             Console.WriteLine();

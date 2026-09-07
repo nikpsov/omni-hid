@@ -21,23 +21,17 @@ namespace OmniHid.Core.Protocols
     /// - Response Report: 17 bytes via Input Report (ID 0x09), where Byte 6 is battery percentage (0..100) and Byte 7 is charging flag.
     /// - Multi-interface concurrency: Uses pre-listening overlapped readers across all input endpoints to ensure asynchronous packet capture.
     /// </remarks>
-    public class AresonProtocol : IProtocolHandler
+    public class AresonProtocol : BaseProtocolHandler
     {
         // ═══════════════════════════════════════════════════════════════════════
         // Protocol Constants
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>Unique protocol identifier.</summary>
-        public string ProtocolId { get { return "areson"; } }
+        public override string ProtocolId { get { return "areson"; } }
 
         /// <summary>Human-readable display name of the protocol.</summary>
-        public string ProtocolName { get { return "Areson Wireless MCU Protocol"; } }
-
-        /// <summary>
-        /// Gets a value indicating whether this protocol can query telemetry when no Windows HID interface handles exist.
-        /// Areson devices require direct communication via HID Feature/Input reports.
-        /// </summary>
-        public bool CanQueryWithoutHidInterfaces { get { return false; } }
+        public override string ProtocolName { get { return "Areson Wireless MCU Protocol"; } }
 
         /// <summary>Report ID used to send query commands via SetFeature.</summary>
         public const byte REPORT_ID_FEATURE_CMD = 0x08;
@@ -62,7 +56,7 @@ namespace OmniHid.Core.Protocols
         /// <param name="interfaces">List of HID interfaces associated with this mouse.</param>
         /// <param name="profile">Declarative profile information.</param>
         /// <returns>Populated <see cref="BatteryTelemetry"/> instance.</returns>
-        public BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
+        public override BatteryTelemetry QueryBattery(IHidTransport transport, List<HidDeviceInfo> interfaces, DeviceProfile profile)
         {
             if (interfaces == null || interfaces.Count == 0)
             {
@@ -70,13 +64,10 @@ namespace OmniHid.Core.Protocols
             }
 
             // 1. Check Windows PnP battery property cache first
-            foreach (var iface in interfaces)
+            BatteryTelemetry pnpTelemetry;
+            if (TryGetPnpBattery(transport, interfaces, out pnpTelemetry))
             {
-                int pnpLevel = transport.GetPnpBatteryLevel(iface.DevicePath);
-                if (pnpLevel >= 0 && pnpLevel <= 100)
-                {
-                    return BatteryTelemetry.Online(pnpLevel, BatteryState.Discharging);
-                }
+                return pnpTelemetry;
             }
 
             byte[] cmdReport = BuildQueryCommand(CMD_QUERY_STATUS);
