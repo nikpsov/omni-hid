@@ -257,7 +257,7 @@ namespace OmniHid.Core.Profiles
             if (!string.IsNullOrEmpty(baseDir))
             {
                 string localDevices = Path.Combine(baseDir, "devices");
-                if (Directory.Exists(localDevices))
+                if (Directory.Exists(localDevices) && IsDirectoryWritable(localDevices))
                 {
                     return localDevices;
                 }
@@ -275,6 +275,25 @@ namespace OmniHid.Core.Profiles
             }
 
             return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devices");
+        }
+
+        /// <summary>
+        /// Probes whether a specific directory is writable under current user security permissions.
+        /// </summary>
+        private static bool IsDirectoryWritable(string directoryPath)
+        {
+            if (string.IsNullOrEmpty(directoryPath) || !Directory.Exists(directoryPath)) return false;
+            try
+            {
+                string testFile = Path.Combine(directoryPath, ".write_test_" + Guid.NewGuid().ToString("N"));
+                File.WriteAllText(testFile, "test");
+                File.Delete(testFile);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

@@ -59,8 +59,8 @@ Modern gaming peripherals (mice, keyboards, headsets, and gamepads) offer high-p
               │                           │
 ┌─────────────▼──────────────┐ ┌──────────▼──────────────┐
 │       DeviceRegistry       │ │    14+ Protocol Drivers │
-│  - Embedded JSON profiles  │ │  - logitech-hidpp / cent │
-│  - External JSON profiles  │ │  - areson / royuan / ...│
+│  - Declarative JSON profile│ │  - logitech-hidpp / cent │
+│  - Verified & unverified   │ │  - areson / royuan / ...│
 │  - Hot-reload file watcher │ │  - razer / steelseries  │
 └────────────────────────────┘ └──────────┬──────────────┘
                                           │

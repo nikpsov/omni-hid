@@ -63,7 +63,7 @@ namespace OmniHid.Core.Abstractions
         void RefreshTelemetry();
 
         /// <summary>
-        /// Reloads device profiles from embedded resources and external filesystem locations.
+        /// Reloads device profiles from external filesystem locations.
         /// </summary>
         void ReloadProfiles();
 

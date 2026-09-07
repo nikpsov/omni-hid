@@ -1,6 +1,6 @@
 ; OmniHID Inno Setup Script
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.0"
+  #define MyAppVersion "0.2.1"
 #endif
 
 #define MyAppName "OmniHID"
@@ -37,12 +37,12 @@ Name: "envPath"; Description: "Add OmniHID to User PATH environment variable (re
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\dist\omni-hid.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\OmniHid.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\devices\verified\*"; DestDir: "{userappdata}\OmniHid\devices\verified"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\dist\devices\unverified\*"; DestDir: "{userappdata}\OmniHid\devices\unverified"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\README.ru.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\omni-hid.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\OmniHid.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\devices\verified\*"; DestDir: "{userappdata}\OmniHid\devices\verified"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\devices\unverified\*"; DestDir: "{userappdata}\OmniHid\devices\unverified"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\README.ru.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\OmniHID Command Prompt"; Filename: "{cmd}"; Parameters: "/K ""{app}\{#MyAppExeName}"" --help"; WorkingDir: "{app}"

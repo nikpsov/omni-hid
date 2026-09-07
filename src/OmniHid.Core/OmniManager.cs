@@ -324,7 +324,7 @@ namespace OmniHid.Core
         }
 
         /// <summary>
-        /// Reloads device profiles from embedded resources and external filesystem locations,
+        /// Reloads device profiles from external filesystem locations,
         /// and triggers an immediate asynchronous bus scan and telemetry refresh.
         /// </summary>
         public void ReloadProfiles()

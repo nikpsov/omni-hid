@@ -35,7 +35,7 @@ namespace OmniHid.Core.Devices
         }
 
         /// <summary>
-        /// Occurs when device profiles have been reloaded from embedded resources or external files.
+        /// Occurs when device profiles have been reloaded from external files.
         /// </summary>
         public event Action ProfilesReloaded;
 
@@ -44,12 +44,10 @@ namespace OmniHid.Core.Devices
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="DeviceRegistry"/> class,
-        /// registers built-in assembly embedded profiles, and loads external profiles.
+        /// Initializes a new instance of the <see cref="DeviceRegistry"/> class and loads peripheral profiles from external directories.
         /// </summary>
         public DeviceRegistry()
         {
-            LoadEmbeddedProfiles();
             LoadExternalProfiles();
         }
 
@@ -80,8 +78,7 @@ namespace OmniHid.Core.Devices
         }
 
         /// <summary>
-        /// Clears registered profile caches and reloads all definitions from embedded assembly resources
-        /// followed by external filesystem profile locations.
+        /// Clears registered profile caches and reloads all definitions from external filesystem profile locations.
         /// </summary>
         public void Reload()
         {
@@ -91,7 +88,6 @@ namespace OmniHid.Core.Devices
                 _exactMap.Clear();
                 _wildcards.Clear();
 
-                LoadEmbeddedProfiles();
                 LoadExternalProfiles();
             }
 
@@ -524,56 +520,8 @@ namespace OmniHid.Core.Devices
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // Embedded Resource & External Directory Loading
+        // External Directory Loading & Watchers
         // ═══════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Discovers and registers peripheral profiles embedded directly within the OmniHid.Core assembly.
-        /// </summary>
-        private void LoadEmbeddedProfiles()
-        {
-            try
-            {
-                var assembly = typeof(DeviceRegistry).Assembly;
-                string[] resourceNames = assembly.GetManifestResourceNames();
-                if (resourceNames == null) return;
-
-                foreach (string resourceName in resourceNames)
-                {
-                    if (resourceName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                    {
-                        try
-                        {
-                            using (var stream = assembly.GetManifestResourceStream(resourceName))
-                            {
-                                if (stream != null)
-                                {
-                                    using (var reader = new StreamReader(stream, Encoding.UTF8))
-                                    {
-                                        string content = reader.ReadToEnd();
-                                        DeviceProfile profile = JsonProfileLoader.ParseProfile(content);
-                                        if (profile != null && profile.VendorId > 0)
-                                        {
-                                            profile.IsCustomProfile = false;
-                                            profile.IsRegisteredProfile = true;
-                                            Register(profile);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception)
-                        {
-                            // Skip corrupt or unreadable embedded profile resource
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // Ignore assembly manifest resource reflection errors
-            }
-        }
 
         /// <summary>
         /// Recursively scans and loads external JSON peripheral definitions from a specific directory path.
@@ -689,18 +637,11 @@ namespace OmniHid.Core.Devices
                 searchDirs.Add(Path.Combine(appData, "OmniHid", "devices"));
             }
 
-            // 2. Application base directory and development parent hierarchy
+            // 2. Application base directory
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             if (!string.IsNullOrEmpty(baseDir))
             {
                 searchDirs.Add(Path.Combine(baseDir, "devices"));
-
-                DirectoryInfo dir = new DirectoryInfo(baseDir);
-                for (int depth = 0; depth < 3 && dir.Parent != null; depth++)
-                {
-                    dir = dir.Parent;
-                    searchDirs.Add(Path.Combine(dir.FullName, "devices"));
-                }
             }
 
             // 3. Current working directory
