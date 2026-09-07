@@ -1,5 +1,5 @@
-name: New Device Support / Verification
-description: Submit diagnostic dumps, verify support, or request reverse engineering for a new peripheral
+name: New Device Support / Reverse Engineering
+description: Submit diagnostic dumps or request protocol reverse engineering for an unsupported peripheral
 title: "[Device]: <Manufacturer> <Model Name>"
 labels: ["device-support"]
 body:

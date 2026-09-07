@@ -1,0 +1,101 @@
+name: Verify Device
+description: Confirm that an unverified device profile works correctly (battery percentage, wireless / USB charging status)
+title: "[Verify]: <Manufacturer> <Model Name>"
+labels: ["device-verification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Device Profile Verification
+        Thank you for helping test and verify hardware peripherals with OmniHID!
+        This form is for peripherals currently marked with an **Unverified** badge in the UI or residing in `devices/unverified/`.
+        Once verified, the profile will be promoted to `devices/verified/`.
+
+  - type: input
+    id: manufacturer
+    attributes:
+      label: Manufacturer / Brand
+      description: Name of the peripheral vendor or manufacturer
+      placeholder: "e.g., Logitech, Razer, Akko, ARDOR Gaming, SteelSeries, Corsair, Sony"
+    validations:
+      required: true
+
+  - type: input
+    id: model_name
+    attributes:
+      label: Device Model Name
+      description: Specific model or product edition
+      placeholder: "e.g., G305 LIGHTSPEED, Viper V2 Pro, 5075B Plus, Cloud II Wireless, DualSense"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Device Category
+      description: Functional category of the hardware peripheral
+      options:
+        - Mouse
+        - Keyboard
+        - Headset
+        - Gamepad
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: vid_pid
+    attributes:
+      label: USB Vendor ID (VID) & Product ID (PID)
+      description: Hexadecimal hardware identifiers (visible in `omni-hid scan`, `omni-hid list`, or the Taskbar Flyout)
+      placeholder: "e.g., 046D:C53F (or separate dongle/cable PIDs if dual-mode)"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: connection_modes
+    attributes:
+      label: Connection Mode(s) Tested
+      description: Select all connection interfaces you tested
+      options:
+        - label: 2.4GHz Wireless USB Dongle / Receiver
+        - label: Direct USB Wired Cable
+        - label: Bluetooth
+
+  - type: checkboxes
+    id: verification_checklist
+    attributes:
+      label: Verification Checklist
+      description: Please confirm the core operational states of this device
+      options:
+        - label: "Hardware Recognized: Device is properly detected and identified in OmniHID / Taskbar Indicator"
+          required: true
+        - label: "Accurate Battery Percentage: The battery reading is correct and matches/correlates with official OEM software or hardware LED indicators"
+          required: true
+        - label: "Accurate Battery / Discharging State: Disconnecting the cable correctly reports the peripheral as discharging / on battery"
+          required: true
+        - label: "Accurate USB Charging State: Connecting the USB cable correctly triggers the Charging state (⚡)"
+          required: true
+
+  - type: textarea
+    id: readings_comparison
+    attributes:
+      label: Telemetry Comparison Details
+      description: Comparison between OmniHID reading and official software (or physical indicators)
+      placeholder: |
+        - OmniHID Battery Reading: e.g., 85%, 3940 mV, Discharging
+        - Official Software Reading: e.g., 85% in Razer Synapse / Logitech G HUB / OEM app
+        - Charging Behavior: e.g., transitions immediately to ⚡ Charging when cable is attached
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_notes
+    attributes:
+      label: Additional Notes / Observations
+      description: Any extra details regarding wake-from-sleep behavior, dual-mode cable switching, or firmware versions
+      placeholder: |
+        - Firmware Version (if known): v1.0.4
+        - Sleep / Wake Behavior: Battery reading updates within ~2 seconds after waking from idle
+    validations:
+      required: false
