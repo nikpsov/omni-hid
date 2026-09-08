@@ -287,3 +287,15 @@ omni-hid/
 ## Лицензия
 
 OmniHID распространяется под открытой лицензией [MIT](LICENSE).
+
+---
+
+## Поддержка и донаты
+
+Если проект оказался полезным и вы хотите поддержать автора:
+
+- **CloudTips:** [https://pay.cloudtips.ru/p/0886f5f7](https://pay.cloudtips.ru/p/0886f5f7)
+- **USDT (TRC20 / TRON):** `TQpX2ogcFtb1pAnhKrnEioEc6wLZRCh7nv`
+- **USDT (ERC20 / ETH):** `0x6cffDEA7b163850229610CA5Bbe9769E7F07F9e8`
+- **GRAM (TON):** `UQDQpCjTeWYPDu0E8IcbojydBFeVHfRxzfOFFdxxw4gfYKq6`
+
