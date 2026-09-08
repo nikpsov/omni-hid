@@ -1,9 +1,0 @@
-{
-  "model_name": "Razer Viper Ultimate",
-  "vendor_id": "0x1532",
-  "product_ids": [ "0x007A", "0x007B" ],
-  "category": "Mouse",
-  "protocol": "razer",
-  "battery_life_hours": 70,
-  "capabilities": [ "BatteryLevel", "ChargingStatus" ]
-}
