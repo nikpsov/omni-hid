@@ -224,15 +224,33 @@ namespace OmniHid.Core.Devices
                         Telemetry.State = BatteryState.Full;
                     }
 
-                    // 2. Runtime estimation: calculate TimeToEmpty ONLY when actively discharging on battery!
-                    if (Telemetry.State == BatteryState.Discharging && Telemetry.TimeToEmptyMinutes <= 0 && _profile.BatteryLifeHours > 0 && Telemetry.LevelPercent >= 0)
+                    // 2. Runtime estimation: calculate TimeToEmpty when operating wirelessly on battery
+                    bool isOperatingOnBattery = !isWired && !Telemetry.IsCharging;
+                    if (isOperatingOnBattery && _profile.BatteryLifeHours > 0 && Telemetry.LevelPercent >= 0)
                     {
-                        Telemetry.TimeToEmptyMinutes = (int)Math.Round((Telemetry.LevelPercent / 100.0) * _profile.BatteryLifeHours * 60.0);
+                        if (Telemetry.TimeToEmptyMinutes <= 0)
+                        {
+                            Telemetry.TimeToEmptyMinutes = (int)Math.Round((Telemetry.LevelPercent / 100.0) * _profile.BatteryLifeHours * 60.0);
+                        }
                     }
-                    else if (Telemetry.State != BatteryState.Discharging)
+                    else if (!isOperatingOnBattery)
                     {
                         // Suppress runtime depletion timer when plugged in (Charging / Full / Wired)
                         Telemetry.TimeToEmptyMinutes = 0;
+                    }
+
+                    // 3. Charge time estimation: calculate TimeToFull when actively charging over USB
+                    if (Telemetry.IsCharging && Telemetry.LevelPercent >= 0 && Telemetry.LevelPercent < 100)
+                    {
+                        if (Telemetry.TimeToFullMinutes <= 0)
+                        {
+                            // Standard peripheral USB charging profile: ~120 minutes (2.0h) for 0..100% cycle
+                            Telemetry.TimeToFullMinutes = Math.Max(1, (int)Math.Round(((100 - Telemetry.LevelPercent) / 100.0) * 120.0));
+                        }
+                    }
+                    else if (!Telemetry.IsCharging)
+                    {
+                        Telemetry.TimeToFullMinutes = 0;
                     }
                 }
                 else
